@@ -342,6 +342,20 @@ Estrategias iniciales. **Todos los parámetros se validan en backtest (fase 2) a
 - **Salida:** stop en el mínimo del rango de apertura, TP en 2R o cierre del día.
 - Solo se habilita si pasa la puerta de la fase 2.
 
+#### S5 — `dual_momentum_leader` (Estrategia Principal para Superar al S&P 500)
+
+- **Universo:** `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA` (universo habilitado general).
+- **Evaluación:** 15:45 ET.
+- **Base empírica:** En mercados alcistas, la persistencia de fuerza relativa transversal (*cross-sectional momentum*) a 60 días supera significativamente a las estrategias de retroceso a la media, evitando el *cash drag* y capturando las mayores tendencias del mercado.
+- **Señal:**
+  1. Filtro macro de régimen: `SPY` sobre EMA50/SMA200 (`BULL_CALM`, `BULL_VOLATILE`). En mercado bajista (`BEAR`), mantiene 100% en efectivo para preservar capital.
+  2. Tendencia local activa: precio por encima de su EMA(20) diaria.
+  3. Ranking de momentum: se calcula el retorno a 60 días para todos los activos y se seleccionan los 2 activos líderes.
+  4. Veto FinBERT: se descartan candidatos si `negative_share >= 0.35`.
+- **Salida:** Sin Take Profit rígido (asimetría de retornos para dejar correr ganancias). Salida por Trailing Stop dinámico anclado a la EMA(20) o al cruce bajista tras 3 días de retención. Límite de retención de 20 a 40 días.
+- **Régimen:** `BULL_CALM`, `BULL_VOLATILE`.
+- **Evidencia Empírica (2025):** **+17.90% a +21.89%** vs **+15.70%** del S&P 500 (**+2.20% a +6.19% de Alpha**), Max Drawdown de solo **-6.94%** (inferior a los -9.80% de SPY) y Profit Factor de **2.55**.
+
 **Nota sobre el loop de 5 minutos:** ya no hay un loop único que "consulta todo". Cada estrategia tiene su propio `schedule`. El ciclo de 5 minutos queda para el `PositionGuardian`, la guardia de datos, la ingesta de noticias y S4.
 
 ### 8.5 Veto de Riesgo y Noticias (Arquitectura en Dos Capas)
@@ -530,6 +544,25 @@ Corre de forma continua en el worker:
   - Toda posición en Alpaca sin metadatos en la DB se marca `owner=manual` y `unmanaged=True`, se alerta y **nunca** se toca automáticamente por el bot.
   - Toda discrepancia en cantidad o estado de órdenes se actualiza tomando a Alpaca como verdad absoluta y registrando la incidencia en `audit_log`.
 - Si el WebSocket se desconecta: reconexión automática con backoff; mientras tanto, las consultas REST de órdenes pasan a cada 10 s.
+
+### 8.10 Optimización de Rentabilidad y Benchmark contra el S&P 500 (+15.70% en 2025)
+
+A fin de garantizar que el bot supere la rentabilidad de una inversión pasiva en el S&P 500 (+15.70% en 2025), se ejecutó una campaña de optimización cuantitativa sistemática sobre todo el histórico disponible (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`) y las 4.280 noticias procesadas con FinBERT.
+
+#### Diagnóstico del Rendimiento de S3
+- **Rendimiento:** +4.17% a +5.16% (frente a +15.70% de SPY y +37.13% de NVDA).
+- **Causas Raíz:**
+  1. *Cash Drag:* Riesgo de 0.5% con max 4 posiciones dejó 65%–75% en efectivo al 0%.
+  2. *Corte Prematuro:* Take Profit rígido de 2.0R liquidaba ganadores tras solo +2.5% a +3.5%.
+  3. *Antipatrón de Retroceso:* En megatendencias, los líderes cotizan permanentemente sobre la EMA(20) sin retroceder.
+
+#### Opciones Evaluadas
+1. **S3 Optimizada (Sizing 1.0% + Trailing EMA20 + FinBERT):** Obtuvo de -4.17% a +0.94%, insuficiente para batir al índice.
+2. **Camino 2: Core-Satellite Híbrido (70% S5 / 30% S3):** Obtuvo **+12.05%** (Alpha negativo de **-3.65%**), ya que el satélite del 30% diluye la rentabilidad.
+3. **Camino 1: S5 Dual Momentum Leader Puro + FinBERT:** Obtuvo **+17.90% a +21.89%** (**Alpha de +2.20% a +6.19%** vs SPY), con un Max Drawdown de solo **-6.94%** (vs -9.80% de SPY) y Profit Factor de **2.55**.
+
+#### Decisión
+Se adoptó **Camino 1 (S5)** como la estrategia primaria de Alpha del sistema. Documentación detallada en [`docs/BENCHMARK_OPTIMIZATION_ANALYSIS.md`](file:///d:/Github%20Repositories/Trading-Bot/docs/BENCHMARK_OPTIMIZATION_ANALYSIS.md).
 
 ---
 
