@@ -9,7 +9,7 @@ from decimal import Decimal
 import structlog
 
 from tbot.common.clock import Clock, SystemClock
-from tbot.execution.interfaces import BrokerAdapter, BrokerOrder, BrokerPosition, OrderRequest
+from tbot.execution.interfaces import BrokerAdapter, BrokerPosition, OrderRequest
 from tbot.risk.ownership import OwnershipLedger
 
 logger = structlog.get_logger(__name__)

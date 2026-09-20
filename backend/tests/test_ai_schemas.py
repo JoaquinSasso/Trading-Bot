@@ -75,3 +75,84 @@ def test_veto_result_unavailable_and_bypassed():
     assert bypassed.status == "BYPASSED"
     assert bypassed.verdict == VetoVerdict.CONFIRM
     assert bypassed.size_multiplier == 1.0
+
+
+@pytest.mark.asyncio
+async def test_quantitative_veto_mode_rejects_panic_cluster():
+    from datetime import datetime
+    from decimal import Decimal
+
+    from tbot.ai.veto import AIVeto
+    from tbot.news.models import NewsFeatures
+    from tbot.strategies.interfaces import Signal
+
+    veto = AIVeto(mode="quantitative")
+    sig = Signal(
+        signal_id="sig_test_q1",
+        strategy_id="s3_trend_pullback",
+        symbol="AAPL",
+        side="buy",
+        entry_type="market",
+        entry_price_ref=Decimal("150.00"),
+        stop_price=Decimal("145.00"),
+        created_at=datetime(2026, 9, 21, 15, 45),
+    )
+
+    # 40% de noticias negativas (pánico/cluster)
+    news = NewsFeatures(
+        symbol="AAPL",
+        window="24h",
+        ts=datetime(2026, 9, 21, 15, 45),
+        n_items=10,
+        sentiment_mean=-0.2,
+        sentiment_min=-0.8,
+        negative_share=0.40,
+        sources=["Reuters"],
+        top_topics=["general"],
+    )
+
+    res = await veto.review(sig, {}, "BULL_CALM", {}, news, datetime(2026, 9, 21, 15, 45))
+    assert res.verdict == VetoVerdict.REJECT
+    assert res.size_multiplier == 0.0
+    assert res.reason_code == VetoReasonCode.NEWS_NEGATIVE_CLUSTER
+    assert res.provider == "quantitative_engine"
+
+
+@pytest.mark.asyncio
+async def test_quantitative_veto_mode_approves_normal_news():
+    from datetime import datetime
+    from decimal import Decimal
+
+    from tbot.ai.veto import AIVeto
+    from tbot.news.models import NewsFeatures
+    from tbot.strategies.interfaces import Signal
+
+    veto = AIVeto(mode="quantitative")
+    sig = Signal(
+        signal_id="sig_test_q2",
+        strategy_id="s3_trend_pullback",
+        symbol="NVDA",
+        side="buy",
+        entry_type="market",
+        entry_price_ref=Decimal("140.00"),
+        stop_price=Decimal("135.00"),
+        created_at=datetime(2026, 9, 21, 15, 45),
+    )
+
+    news = NewsFeatures(
+        symbol="NVDA",
+        window="24h",
+        ts=datetime(2026, 9, 21, 15, 45),
+        n_items=5,
+        sentiment_mean=0.35,
+        sentiment_min=-0.05,
+        negative_share=0.05,
+        sources=["Benzinga"],
+        top_topics=["earnings", "momentum"],
+    )
+
+    res = await veto.review(sig, {}, "BULL_CALM", {}, news, datetime(2026, 9, 21, 15, 45))
+    assert res.verdict == VetoVerdict.CONFIRM
+    assert res.size_multiplier == 1.0
+    assert res.reason_code == VetoReasonCode.OK
+    assert res.provider == "quantitative_engine"

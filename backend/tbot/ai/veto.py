@@ -10,7 +10,7 @@ import structlog
 
 from tbot.ai.providers import AIProvider, GeminiProvider, GroqProvider
 from tbot.ai.quota import QuotaTracker
-from tbot.ai.schemas import VetoInput, VetoOutput, VetoResult, VetoVerdict
+from tbot.ai.schemas import VetoInput, VetoOutput, VetoReasonCode, VetoResult, VetoVerdict
 from tbot.news.models import NewsFeatures
 from tbot.strategies.interfaces import Signal
 
@@ -18,11 +18,11 @@ logger = structlog.get_logger(__name__)
 
 
 class AIVeto:
-    """Orquestador de Veto de IA para filtrado de riesgo algorítmico."""
+    """Orquestador de Veto de Riesgo y Noticias con modos cuantitativo y LLM."""
 
     def __init__(
         self,
-        mode: Literal["off", "advisory", "required"] = "required",
+        mode: Literal["off", "quantitative", "advisory", "required"] = "quantitative",
         primary_provider: AIProvider | None = None,
         fallback_provider: AIProvider | None = None,
         quota_tracker: QuotaTracker | None = None,
@@ -89,7 +89,55 @@ class AIVeto:
         if self.mode == "off":
             return VetoResult.bypassed()
 
-        # Construir y validar payload de entrada
+        if self.mode == "quantitative":
+            # Reglas matemáticas deterministas directas sobre NewsFeatures de FinBERT
+            # 1. Pánico o cluster de noticias negativas
+            if news.negative_share >= 0.35:
+                return VetoResult(
+                    verdict=VetoVerdict.REJECT,
+                    size_multiplier=0.0,
+                    reason_code=VetoReasonCode.NEWS_NEGATIVE_CLUSTER,
+                    analysis=f"Rechazado por clúster de noticias negativas ({news.negative_share * 100:.1f}% rojas)",
+                    status="OK",
+                    provider="quantitative_engine",
+                    latency_ms=0,
+                )
+
+            # 2. Litigios o investigaciones abiertas con sentimiento negativo
+            if "litigation" in news.top_topics and news.sentiment_mean < 0.0:
+                return VetoResult(
+                    verdict=VetoVerdict.REJECT,
+                    size_multiplier=0.0,
+                    reason_code=VetoReasonCode.EVENT_RISK,
+                    analysis=f"Rechazado por riesgo legal/investigación regulatoria (score {news.sentiment_mean})",
+                    status="OK",
+                    provider="quantitative_engine",
+                    latency_ms=0,
+                )
+
+            # 3. Recorte de guidance con sentimiento débil
+            if "guidance" in news.top_topics and news.sentiment_mean < -0.15:
+                return VetoResult(
+                    verdict=VetoVerdict.REDUCE,
+                    size_multiplier=0.5,
+                    reason_code=VetoReasonCode.NEWS_NEGATIVE_CLUSTER,
+                    analysis="Tamaño reducido al 50% por recorte de proyecciones (guidance adverso)",
+                    status="OK",
+                    provider="quantitative_engine",
+                    latency_ms=0,
+                )
+
+            return VetoResult(
+                verdict=VetoVerdict.CONFIRM,
+                size_multiplier=1.0,
+                reason_code=VetoReasonCode.OK,
+                analysis="Aprobado: métricas cuantitativas de noticias dentro de parámetros normales",
+                status="OK",
+                provider="quantitative_engine",
+                latency_ms=0,
+            )
+
+        # Construir y validar payload de entrada para modos LLM (advisory / required)
         try:
             veto_input = self.build_payload(signal, features, regime, events, news)
             payload_json = veto_input.model_dump_json(indent=2)

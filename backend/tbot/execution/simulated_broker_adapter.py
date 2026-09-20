@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from decimal import Decimal
 
 from tbot.backtest.simulated_broker import SimulatedBroker, SimulatedPosition

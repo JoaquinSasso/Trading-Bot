@@ -392,7 +392,11 @@ def main() -> int:
     parser.add_argument("--broker", type=str, default="simulated", choices=["simulated", "alpaca"])
     parser.add_argument("--capital", type=float, default=2000.0, help="Capital inicial asignado")
     parser.add_argument(
-        "--veto", type=str, default="required", choices=["required", "advisory", "off"]
+        "--veto",
+        type=str,
+        default="quantitative",
+        choices=["quantitative", "required", "advisory", "off"],
+        help="Modo de veto: quantitative (reglas matemáticas sobre FinBERT), required, advisory, off",
     )
 
     args = parser.parse_args()
