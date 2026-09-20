@@ -36,11 +36,19 @@ def _create_synthetic_bars(
 def test_s5_metadata_and_properties():
     strat = DualMomentumLeaderStrategy()
     assert strat.id == "dual_momentum_leader"
-    assert strat.version == "1.0.0"
+    assert strat.version == "1.1.0"
+    assert strat.momentum_lookback_days == 45
+    assert strat.trailing_ema_period == 25
+    assert strat.top_n_leaders == 2
+    assert strat.max_holding_days == 30
     assert MarketRegime.BULL_CALM in strat.allowed_regimes
     assert MarketRegime.BULL_VOLATILE in strat.allowed_regimes
     assert MarketRegime.BEAR not in strat.allowed_regimes
     assert MarketRegime.UNKNOWN not in strat.allowed_regimes
+    assert "JPM" in strat.universe
+    assert "LLY" in strat.universe
+    assert "XOM" in strat.universe
+    assert "COST" in strat.universe
 
 
 def test_s5_regime_gating_preserves_capital_in_bear_market():
@@ -189,7 +197,37 @@ def test_s5_signal_structure_and_asymmetric_take_profit():
     # Regla clave de asimetría: Sin TP fijo para permitir captura de rallies
     assert sig.take_profit_price is None
     assert sig.exit_at_close is False
-    assert sig.max_holding == timedelta(days=20)
+    assert sig.max_holding == timedelta(days=30)
     assert "momentum_60d" in sig.features
     assert "ema20" in sig.features
     assert sig.features["rank"] == 1
+
+
+def test_s5_multi_sector_ranking_selects_non_tech_leaders():
+    strat = DualMomentumLeaderStrategy(momentum_lookback_days=45, top_n_leaders=2)
+    eval_dt = datetime(2025, 6, 10, 15, 45)
+
+    # LLY (Salud): +40% a 45 días
+    df_lly = _create_synthetic_bars(100.0, 140.0, n_days=80, end_date=eval_dt)
+    # JPM (Finanzas): +25% a 45 días
+    df_jpm = _create_synthetic_bars(100.0, 125.0, n_days=80, end_date=eval_dt)
+    # AAPL (Tech): +5% a 45 días
+    df_aapl = _create_synthetic_bars(100.0, 105.0, n_days=80, end_date=eval_dt)
+
+    ctx = StrategyContext(
+        now=eval_dt,
+        regime=MarketRegime.BULL_CALM,
+        daily_bars={"LLY": df_lly, "JPM": df_jpm, "AAPL": df_aapl},
+        current_prices={
+            "LLY": Decimal("140.00"),
+            "JPM": Decimal("125.00"),
+            "AAPL": Decimal("105.00"),
+        },
+    )
+
+    signals = strat.generate(ctx)
+    assert len(signals) == 2
+    assert signals[0].symbol == "LLY"
+    assert signals[0].features["rank"] == 1
+    assert signals[1].symbol == "JPM"
+    assert signals[1].features["rank"] == 2

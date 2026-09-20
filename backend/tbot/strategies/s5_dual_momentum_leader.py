@@ -28,38 +28,45 @@ from tbot.strategies.interfaces import (
 
 
 class DualMomentumLeaderStrategy:
-    """Implementación de S5 - Dual Momentum Leader."""
+    """Implementación de S5 - Dual Momentum Leader optimizada."""
 
     id: str = "dual_momentum_leader"
-    version: str = "1.0.0"
+    version: str = "1.1.0"
     schedule: list[str] = ["15:45 America/New_York"]
     allowed_regimes: set[MarketRegime] = {
         MarketRegime.BULL_CALM,
         MarketRegime.BULL_VOLATILE,
     }
     allows_open_window: bool = False
-    universe: list[str] | None = None  # Opera sobre universo habilitado (SPY, QQQ, AAPL, NVDA, MSFT)
+
+    # Universo Multi-Sectorial Oficial (Tech + Finanzas, Salud, Energía, Consumo)
+    DEFAULT_UNIVERSE: list[str] = [
+        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST"
+    ]
+    universe: list[str] | None = None
 
     data_requirements: StrategyDataRequirements = StrategyDataRequirements(
         needs_daily_bars=True,
-        daily_lookback_days=90,  # Requiere al menos 60 días para el momentum y 20 para EMA
+        daily_lookback_days=75,  # 45 días de momentum + 25 días de EMA con margen
         needs_intraday_bars=False,
         requires_sip_delayed=True,
     )
 
     def __init__(
         self,
-        momentum_lookback_days: int = 60,
+        momentum_lookback_days: int = 45,
         top_n_leaders: int = 2,
-        trailing_ema_period: int = 20,
-        stop_buffer_pct: float = 0.05,  # Stop inicial a -5% o bajo EMA20
-        max_holding_days: int = 20,
+        trailing_ema_period: int = 25,
+        stop_buffer_pct: float = 0.05,  # Stop inicial a -5% o bajo EMA
+        max_holding_days: int = 30,
+        universe: list[str] | None = None,
     ) -> None:
         self.momentum_lookback_days = momentum_lookback_days
         self.top_n_leaders = top_n_leaders
         self.trailing_ema_period = trailing_ema_period
         self.stop_buffer_pct = stop_buffer_pct
         self.max_holding_days = max_holding_days
+        self.universe = universe if universe is not None else self.DEFAULT_UNIVERSE
 
     def generate(self, ctx: StrategyContext) -> list[Signal]:
         """Identifica los activos con mayor momentum a 60 días sobre la EMA20 y emite señales."""
@@ -139,8 +146,12 @@ class DualMomentumLeaderStrategy:
                     exit_at_close=False,
                     score=round(min(1.0, max(0.1, mom_score)), 4),
                     features={
+                        "momentum": round(mom_score, 4),
+                        "momentum_lookback_days": self.momentum_lookback_days,
                         "momentum_60d": round(mom_score, 4),
                         "rank": rank,
+                        "trailing_ema": round(val_ema20, 4),
+                        "trailing_ema_period": self.trailing_ema_period,
                         "ema20": round(val_ema20, 4),
                     },
                 )

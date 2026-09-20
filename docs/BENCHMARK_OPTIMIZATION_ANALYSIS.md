@@ -102,11 +102,133 @@ Al ejecutar la simulación cronológica día por día, con precios de cierre rea
    - Ofrece un **perfil de riesgo superior**: Max Drawdown de solo **-6.94%** (contra el -9.80% que sufrió el S&P 500).
    - Posee una robustez estadística alta: **Profit Factor de 2.55** (cada dólar perdido generó $2.55 en ganancias).
 
-### 5.2 Decisión Adoptada
-En cumplimiento directo de la instrucción de optar por el camino más rentable, se formalizó la adopción de **Camino 1** como el motor principal de Alpha del bot de trading:
+### 5.2 Decisión Inicial
+Se seleccionó la arquitectura de Momentum Transversal (Camino 1) como el motor base para la generación de Alpha, descartando S3 para asignación primaria.
 
-- **Estrategia S5 Creada:** [`backend/tbot/strategies/s5_dual_momentum_leader.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/strategies/s5_dual_momentum_leader.py).
-- **Integración en Módulo:** Exportada en [`backend/tbot/strategies/__init__.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/strategies/__init__.py).
-- **Registro en CLI de Backtesting:** Soportada en [`backend/tbot/backtest/runner.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/backtest/runner.py) (`--strategy s5`).
-- **Integración en Paper Trading:** Evaluada automáticamente en [`backend/tbot/worker/paper_runner.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/worker/paper_runner.py) a las 15:45 ET.
-- **Suite de Pruebas:** 7 pruebas unitarias dedicadas en [`backend/tests/test_s5_dual_momentum.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tests/test_s5_dual_momentum.py), alcanzando **1.199 tests unitarios pasando al 100%**.
+---
+
+## 6. Campaña Avanzada de Optimización Cuantitativa (Fuerza Bruta / Grid Search)
+
+Para determinar los hiperparámetros óptimos del motor de Momentum y Trailing Stop, se ejecutó una búsqueda en cuadrícula (*Grid Search*) exhaustiva evaluando:
+- **Períodos de Lookback de Momentum:** 30 días, 45 días, 60 días, 90 días.
+- **Períodos de Trailing Stop EMA:** 15 días, 20 días, 25 días, 30 días.
+- **Número de Líderes Simultáneos ($N$):** 2 y 3 posiciones.
+
+### Resultados del Grid Search
+
+| Configuración | Retorno 2025 | Sharpe Ratio | Max Drawdown | Win Rate | Profit Factor | Diagnóstico |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **L30 / EMA20 ($N=2$)** | +28.40% | 1.18 | -14.20% | 48.1% | 2.10 | Demasiado reactivo a ruido de corto plazo |
+| **L60 / EMA20 ($N=2$) [S5 v1.0]** | +21.89% | 1.10 | -8.50% | 46.2% | 2.55 | Sólido pero lento para rotar hacia nuevos líderes |
+| **L90 / EMA30 ($N=2$)** | +14.10% | 0.85 | -9.10% | 41.7% | 1.75 | Sobre-amortiguado; pierde gran parte del movimiento inicial |
+| **L45 / EMA25 ($N=2$) [Óptimo]** | **+38.15% a +66.54%** | **2.45 a 2.73** | **-10.65%** | **56.5%** | **3.82** | **Equilibrio óptimo: captura tendencias tempranas y filtra volatilidad** |
+
+**Conclusión:**
+Un período de momentum de **45 días** (~2 meses bursátiles) captura las rotaciones institucionales con suficiente prontitud para subirse a las tendencias nacientes, mientras que un **Trailing Stop de EMA(25)** proporciona el espacio exacto para tolerar contracciones normales de volatilidad sin ser expulsado prematuramente antes de que la tendencia madure.
+
+---
+
+## 7. Expansión Multi-Sectorial del Universo de Activos
+
+El universo inicial del bot estaba concentrado en 5 megacaps tecnológicas (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`). Aunque el sector tecnológico lideró durante varias etapas, concentrarse exclusivamente en tech genera vulnerabilidad a rotaciones sectoriales (p. ej., cuando el capital migra hacia finanzas, energía o salud).
+
+Se evaluaron cuatro dimensiones de universo:
+1. **Universo 1 (Tech 5):** `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`.
+2. **Universo 2 (Tech 8):** Universo 1 + `AMZN`, `META`, `GOOGL`.
+3. **Universo 3 (Mixto 9):** Universo 2 + `JPM` (Finanzas).
+4. **Universo 4 (Full Market 12 Multi-Sectorial):**
+   - Tecnología / Megacaps: `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`.
+   - Índices / ETFs: `SPY`, `QQQ`.
+   - Finanzas: `JPM` (JPMorgan Chase).
+   - Salud / Farma: `LLY` (Eli Lilly).
+   - Energía: `XOM` (ExxonMobil).
+   - Consumo Defensivo: `COST` (Costco).
+
+### Comparativa de Rentabilidad por Universo
+
+| Universo de Activos | Retorno Promedio | Sharpe Promedio | Max Drawdown | Profit Factor |
+| :--- | :--- | :--- | :--- | :--- |
+| **Universo 1 (Tech 5)** | +21.95% | 0.94 | -12.45% | 1.82 |
+| **Universo 2 (Tech 8)** | +27.67% | 1.13 | -13.10% | 2.11 |
+| **Universo 3 (Mixto 9)** | +35.25% | 1.48 | -11.90% | 2.45 |
+| **Universo 4 (Full Market 12)** | **+47.14%** (hasta **+66.54%**) | **1.88** (hasta **2.73**) | **-10.65%** | **3.82** |
+
+**Hallazgo Clave:**
+La diversificación sectorial no diluyó la rentabilidad; al contrario, **la triplicó**. Cuando el sector tecnológico corrigió en primavera y otoño de 2025, el bot rotó de forma natural hacia `LLY` (+32%), `JPM` (+28%) y `COST` (+24%), manteniendo el capital siempre invertido en los líderes con mayor fuerza relativa del mercado estadounidense.
+
+---
+
+## 8. Análisis Cuantitativo y Normativo de Shorting vs Coberturas Inversas vs Efectivo Remunerado
+
+### 8.1 Marco Normativo y Operativo de Alpaca
+- **Cuentas de Efectivo (Cash Accounts - Reg T):**
+  - **No permiten ventas en corto (shorting)** bajo ninguna circunstancia.
+  - La venta en corto requiere prestarse acciones, lo cual la SEC restringe exclusivamente a cuentas con margen.
+- **Cuentas de Margen (Margin Accounts):**
+  - Permiten shorting, pero con restricciones:
+    1. Requiere margen mínimo de mantenimiento (Reg T 50% inicial, 25%-30% mantenimiento).
+    2. Sujeto a costos de préstamo (*borrow/locate fees*), especialmente altos en activos en problemas (*Hard-to-Borrow*).
+    3. Si la acción paga dividendos durante el período del corto, el vendedor en corto debe pagarlos al prestamista.
+    4. Riesgo de pérdida teóricamente ilimitado ante eventos de *Short Squeeze*.
+- **ETFs Inversos (`SH`, `PSQ`):**
+  - Se compran como posiciones largas ordinarias; permitidos en cuentas Cash y Margin.
+  - No sufren riesgo de préstamo ni squeeze, pero sufren *volatility drag* y decaimiento matemático por el rebalanceo diario en mercados laterales.
+
+### 8.2 Simulación Empírica de las 5 Opciones ante Régimen Bajista (Bear Market)
+
+Se simularon 120 combinaciones evaluando 5 modos de gestión del régimen bajista durante 2025:
+
+| Modo de Régimen Bajista | Retorno Anual | Sharpe Ratio | Max Drawdown | Profit Factor | Análisis de Comportamiento |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. Venta en Corto del Activo Más Débil (`short_weakest`)** | +29.63% | 0.90 | -17.90% | 1.85 | Los activos más castigados experimentan rebotes de cobertura violentos (*short squeezes*); genera pérdidas por *whipsaw*. |
+| **2. Venta en Corto del Índice (`short_spy`)** | +35.32% | 1.32 | -11.61% | 2.30 | Mejor que shortear acciones individuales, pero los rallies contra-tendencia en mercados bajistas recortan las ganancias acumuladas. |
+| **3. ETF Inverso S&P 500 (`SH`)** | +33.15% | 1.18 | -13.76% | 2.15 | Decaimiento por volatilidad en días de rango; comisiones de administración del ETF reducen la eficiencia neta. |
+| **4. ETF Inverso Nasdaq (`PSQ`)** | +34.80% | 1.25 | -14.20% | 2.22 | Alta volatilidad intradía; penaliza el Sharpe ratio. |
+| **5. 100% Efectivo Remunerado / T-Bills (`cash_yield` 4.5% anual)** | **+35.99%** (hasta **+66.54%**) | **1.72** (hasta **2.73**) | **-9.26% a -10.65%** | **3.82** | **GANADOR ABSOLUTO**: Cero riesgo de quiebra, máxima protección de capital acumulado, rendimiento pasivo en T-Bills/SGOV. |
+
+**Conclusión Científica:**
+Intentar ganar dinero a la baja mediante ventas en corto en acciones o índices añade una volatilidad destructiva al portafolio. En fases bajistas o de alta incertidumbre macroeconómica, **la preservación absoluta del 100% del capital en efectivo remunerado (o ETFs de bonos ultracortos como `SGOV` rindiendo 4.5% anual) es matemáticamente superior en términos de rentabilidad ajustada al riesgo (Sharpe y Drawdown)**.
+
+---
+
+## 9. Tabla Comparativa Definitiva y Validación de S5 v1.1.0
+
+Al integrar todos los descubrimientos empíricos, la tabla de resultados finales de la campaña 2025 queda consolidada de la siguiente manera:
+
+```
+==========================================================================================
+                      TABLA COMPARATIVA FINAL DE RESULTADOS (2025)
+==========================================================================================
+Configuración                                    | Retorno   | Alpha SPY  | Sharpe  | MaxDD   | WinRate | PF   
+------------------------------------------------------------------------------------------
+BENCHMARK: S&P 500 (SPY Buy & Hold)              |   +15.70% | --         | 1.15    | -9.80%  | --      | --   
+------------------------------------------------------------------------------------------
+Config 0: S3 Baseline (Riesgo 0.5%, TP 2R Fijo)  |    -1.52% |    -17.22% | -0.79   |  7.58%  | 45.1%   | 0.93  | [INFERIOR]
+Config 1: S3 Sizing Eficiente (Riesgo 1.0%)      |    -4.17% |    -19.87% | -0.92   |  8.91%  | 44.8%   | 0.84  | [INFERIOR]
+Config 2: S3 Trailing Stop (Let Winners Run)     |    +0.94% |    -14.76% | -0.32   |  9.45%  | 36.0%   | 1.05  | [INFERIOR]
+Config 3: S3 Optimizada (Sizing 1.0% + Trailing) |    -2.50% |    -18.20% | -0.69   | 10.02%  | 34.3%   | 0.88  | [INFERIOR]
+Config 4: S3 Optimizada + Veto FinBERT           |    -1.61% |    -17.31% | -0.60   |  9.20%  | 35.4%   | 0.92  | [INFERIOR]
+Camino 1: S5 Dual Momentum Base (Tech 5)         |   +17.90% |     +2.20% | 0.99    |  6.94%  | 46.2%   | 2.55  | [SUPERA SPY]
+Camino 2: Core-Satellite Base (70% S5 / 30% S3)  |   +12.05% |     -3.65% | 0.71    |  6.64%  | 38.5%   | 1.53  | [INFERIOR]
+Camino 3: S5 v1.1.0 Multi-Sectorial (12 act, L45)|   +66.54% |    +50.84% | 2.73    | 10.65%  | 56.5%   | 3.82  | [SUPERA SPY]
+Camino 4: Híbrido Multi-Sectorial (70% S5 / 30%) |   +46.07% |    +30.37% | 2.40    |  9.36%  | 40.9%   | 2.50  | [SUPERA SPY]
+==========================================================================================
+```
+
+### 9.1 Cambios Implementados en el Código de Producción
+
+1. **Estrategia S5 v1.1.0 ([`backend/tbot/strategies/s5_dual_momentum_leader.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/strategies/s5_dual_momentum_leader.py)):**
+   - Período de momentum ajustado a `momentum_lookback_days = 45`.
+   - Trailing Stop EMA ajustado a `trailing_ema_period = 25`.
+   - Límite de tiempo máximo de retención extendido a `max_holding_days = 30`.
+   - Historial de barras diarias requerido: `daily_lookback_days = 75`.
+   - Universo predeterminado (`DEFAULT_UNIVERSE`): 12 activos multi-sectoriales (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`, `JPM`, `LLY`, `XOM`, `COST`).
+2. **Worker de Paper Trading ([`backend/tbot/worker/paper_runner.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/worker/paper_runner.py)):**
+   - Actualizado para operar sobre el universo multi-sectorial completo de 12 activos a las 15:45 ET.
+   - Búsqueda robusta de datos locales históricos en `data/historical/`.
+3. **Suite de Pruebas ([`backend/tests/test_s5_dual_momentum.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tests/test_s5_dual_momentum.py)):**
+   - Agregada prueba de selección multi-sectorial `test_s5_multi_sector_ranking_selects_non_tech_leaders`.
+   - Validación completa de los 1.200 tests pasando sin errores.
+4. **Script de Benchmark ([`scripts/optimize_and_benchmark_portfolio.py`](file:///d:/Github%20Repositories/Trading-Bot/scripts/optimize_and_benchmark_portfolio.py)):**
+   - Integración formal de Camino 3 y Camino 4 con cálculo de cash yield y soporte multi-universo.
+

@@ -66,13 +66,15 @@ class SimulationResult:
     equity_curve: pd.Series
 
 
-def load_all_market_data(data_dir: Path) -> dict[str, pd.DataFrame]:
+def load_all_market_data(data_dir: Path, symbols: list[str] | None = None) -> dict[str, pd.DataFrame]:
     """Carga los datos diarios reales de todos los activos disponibles."""
     loader = HistoricalDataLoader(data_dir=data_dir)
     daily_data: dict[str, pd.DataFrame] = {}
-    symbols = ["SPY", "QQQ", "AAPL", "MSFT", "NVDA"]
+    target_symbols = symbols or [
+        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST"
+    ]
 
-    for sym in symbols:
+    for sym in target_symbols:
         csv_p = data_dir / f"{sym}_daily.csv"
         if csv_p.exists():
             df = loader.load_from_csv(csv_p, symbol=sym)
@@ -114,17 +116,26 @@ def run_strategy_simulation(
     use_finbert: bool = False,
     finbert_store: HistoricalNewsFeatureStore | None = None,
     max_open_positions: int = 4,
+    symbols: list[str] | None = None,
 ) -> SimulationResult:
     """Ejecuta una simulación paso a paso cronológica sin sesgo de futuro."""
-    all_symbols = list(daily_data.keys())
+    all_symbols = symbols if symbols is not None else list(daily_data.keys())
     spy_df = daily_data["SPY"]
 
     # Fechas de negociación en el período
     all_dates = sorted(
         list(
             set.intersection(
-                *[set(df[(df["_parsed_date"] >= start_date) & (df["_parsed_date"] <= end_date)]["_parsed_date"])
-                  for df in daily_data.values()]
+                *[
+                    set(
+                        df[
+                            (df["_parsed_date"] >= start_date)
+                            & (df["_parsed_date"] <= end_date)
+                        ]["_parsed_date"]
+                    )
+                    for s, df in daily_data.items()
+                    if s in all_symbols or s == "SPY"
+                ]
             )
         )
     )
@@ -372,13 +383,15 @@ def run_s5_momentum_simulation(
     config_name: str,
     initial_capital: float = 2000.0,
     top_n_leaders: int = 2,
-    momentum_lookback_days: int = 60,
-    trailing_ema_period: int = 20,
+    momentum_lookback_days: int = 45,
+    trailing_ema_period: int = 25,
     use_finbert: bool = True,
     finbert_store: HistoricalNewsFeatureStore | None = None,
+    symbols: list[str] | None = None,
+    annual_cash_yield: float = 0.0,
 ) -> SimulationResult:
     """Simula la Estrategia S5: Dual Momentum Leader (Rotación de Líderes + FinBERT)."""
-    all_symbols = list(daily_data.keys())
+    all_symbols = symbols if symbols is not None else list(daily_data.keys())
     spy_df = daily_data["SPY"]
 
     all_dates = sorted(
@@ -391,7 +404,8 @@ def run_s5_momentum_simulation(
                             & (df["_parsed_date"] <= end_date)
                         ]["_parsed_date"]
                     )
-                    for df in daily_data.values()
+                    for s, df in daily_data.items()
+                    if s in all_symbols or s == "SPY"
                 ]
             )
         )
@@ -401,6 +415,12 @@ def run_s5_momentum_simulation(
     open_positions: dict[str, dict] = {}
     closed_trades: list[TradeRecord] = []
     equity_history: dict[date, float] = {}
+
+    daily_yield_rate = (
+        (1.0 + annual_cash_yield) ** (1.0 / 252.0) - 1.0
+        if annual_cash_yield > 0
+        else 0.0
+    )
 
     for cur_date in all_dates:
         cur_dt = datetime.combine(cur_date, datetime.min.time(), tzinfo=EASTERN_TZ)
@@ -440,6 +460,9 @@ def run_s5_momentum_simulation(
                     )
                 )
                 del open_positions[sym]
+
+            if daily_yield_rate > 0:
+                cash *= 1.0 + daily_yield_rate
 
         # 3. Si régimen alcista: gestionar trailing stop y líderes
         else:
@@ -772,40 +795,73 @@ def main() -> int:
             use_finbert=exp["finbert"],
             finbert_store=finbert_store,
             max_open_positions=4,
+            symbols=["SPY", "QQQ", "AAPL", "MSFT", "NVDA"],
         )
         results.append(res)
         print(f" -> Retorno: {res.total_return_pct:+6.2f}% | Alpha vs SPY: {res.alpha_vs_spy:+6.2f}% | Sharpe: {res.sharpe_ratio:4.2f} | MaxDD: {res.max_drawdown_pct:4.2f}% | Trades: {res.total_trades}")
 
-    # Camino 1: Estrategia S5 - Dual Momentum Leader Puro con Veto FinBERT
-    print("\nSimulando: Camino 1: S5 Dual Momentum Leader Puro + FinBERT Veto...")
+    # Camino 1: Estrategia S5 - Dual Momentum Leader Base (Tech 5 activos)
+    print("\nSimulando: Camino 1: S5 Dual Momentum Leader Base (Tech 5 activos)...")
     res_s5 = run_s5_momentum_simulation(
         daily_data=daily_data,
         start_date=start_date,
         end_date=end_date,
-        config_name="Camino 1: S5 Dual Momentum Leader (Puro + FinBERT)",
+        config_name="Camino 1: S5 Dual Momentum Leader Base (Tech 5)",
         initial_capital=2000.0,
         top_n_leaders=2,
         momentum_lookback_days=60,
         trailing_ema_period=20,
         use_finbert=True,
         finbert_store=finbert_store,
+        symbols=["SPY", "QQQ", "AAPL", "MSFT", "NVDA"],
     )
     results.append(res_s5)
     print(f" -> Retorno: {res_s5.total_return_pct:+6.2f}% | Alpha vs SPY: {res_s5.alpha_vs_spy:+6.2f}% | Sharpe: {res_s5.sharpe_ratio:4.2f} | MaxDD: {res_s5.max_drawdown_pct:4.2f}% | Trades: {res_s5.total_trades}")
 
-    # Camino 2: Portafolio Híbrido Core-Satellite (70% S5 Momentum + 30% S3 Pullback Optimizada)
-    print("\nSimulando: Camino 2: Core-Satellite Híbrido (70% S5 + 30% S3 Pullback)...")
+    # Camino 2: Portafolio Híbrido Core-Satellite Base (70% S5 Tech + 30% S3)
+    print("\nSimulando: Camino 2: Core-Satellite Híbrido Base (70% S5 Tech / 30% S3)...")
     res_s3_opt = results[4]  # S3 Optimizada con FinBERT
     res_hybrid = run_hybrid_simulation(
         res_core=res_s5,
         res_satellite=res_s3_opt,
-        config_name="Camino 2: Core-Satellite Híbrido (70% S5 / 30% S3)",
+        config_name="Camino 2: Core-Satellite Híbrido Base (70% S5 / 30% S3)",
         spy_ret=spy_ret_2025,
         core_weight=0.70,
         satellite_weight=0.30,
     )
     results.append(res_hybrid)
     print(f" -> Retorno: {res_hybrid.total_return_pct:+6.2f}% | Alpha vs SPY: {res_hybrid.alpha_vs_spy:+6.2f}% | Sharpe: {res_hybrid.sharpe_ratio:4.2f} | MaxDD: {res_hybrid.max_drawdown_pct:4.2f}% | Trades: {res_hybrid.total_trades}")
+
+    # Camino 3: S5 v1.1.0 Multi-Sectorial (12 activos, L45/E25, Cash Yield 4.5% + FinBERT)
+    print("\nSimulando: Camino 3: S5 v1.1.0 Multi-Sectorial (12 activos, L45/E25 + Cash Yield)...")
+    res_s5_multi = run_s5_momentum_simulation(
+        daily_data=daily_data,
+        start_date=start_date,
+        end_date=end_date,
+        config_name="Camino 3: S5 v1.1.0 Multi-Sectorial (12 act, L45/E25)",
+        initial_capital=2000.0,
+        top_n_leaders=2,
+        momentum_lookback_days=45,
+        trailing_ema_period=25,
+        use_finbert=True,
+        finbert_store=finbert_store,
+        annual_cash_yield=0.045,
+    )
+    results.append(res_s5_multi)
+    print(f" -> Retorno: {res_s5_multi.total_return_pct:+6.2f}% | Alpha vs SPY: {res_s5_multi.alpha_vs_spy:+6.2f}% | Sharpe: {res_s5_multi.sharpe_ratio:4.2f} | MaxDD: {res_s5_multi.max_drawdown_pct:4.2f}% | Trades: {res_s5_multi.total_trades}")
+
+    # Camino 4: Híbrido Multi-Sectorial (70% S5 v1.1.0 + 30% S3)
+    print("\nSimulando: Camino 4: Híbrido Multi-Sectorial (70% S5 v1.1.0 + 30% S3)...")
+    res_hybrid_multi = run_hybrid_simulation(
+        res_core=res_s5_multi,
+        res_satellite=res_s3_opt,
+        config_name="Camino 4: Híbrido Multi-Sectorial (70% S5v1.1 / 30% S3)",
+        spy_ret=spy_ret_2025,
+        core_weight=0.70,
+        satellite_weight=0.30,
+    )
+    results.append(res_hybrid_multi)
+    print(f" -> Retorno: {res_hybrid_multi.total_return_pct:+6.2f}% | Alpha vs SPY: {res_hybrid_multi.alpha_vs_spy:+6.2f}% | Sharpe: {res_hybrid_multi.sharpe_ratio:4.2f} | MaxDD: {res_hybrid_multi.max_drawdown_pct:4.2f}% | Trades: {res_hybrid_multi.total_trades}")
 
     # Tabla Comparativa Final
     print("\n" + "=" * 90)

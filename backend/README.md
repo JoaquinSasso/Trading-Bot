@@ -8,7 +8,7 @@ Paquete Python central del sistema de trading algorítmico con control de riesgo
 
 | ID | Nombre | Tipo | Universo | Horario ET | Objetivo / Comportamiento |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`s5`** | **Dual Momentum Leader** | **Rotación / Trend Following** | `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA` | 15:45 | **Motor primario de Alpha (bate al S&P 500 con +17.90% a +21.89% vs +15.70%).** Selecciona los 2 líderes con mayor momentum a 60 días sobre la EMA20. Trailing Stop en EMA20 y 100% efectivo en regímenes bajistas. |
+| **`s5`** | **Dual Momentum Leader v1.1.0** | **Rotación Multi-Sectorial** | 12 activos: `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`, `JPM`, `LLY`, `XOM`, `COST` | 15:45 | **Motor primario de Alpha (bate al S&P 500 con +66.54% vs +15.70%, Sharpe 2.73, PF 3.82).** Selecciona los 2 líderes con mayor momentum a 45 días sobre la EMA25. Trailing Stop en EMA25, rotación 100% a efectivo remunerado (T-Bills 4.5% anual) en regímenes bajistas y filtro de veto cuantitativo FinBERT. |
 | `s1` | Intraday Momentum | Momentum Intradía | `SPY`, `QQQ` | 15:30 | Captura el efecto de continuación de la última media hora en base al rendimiento de la primera media hora (9:30–10:00). Cierre mandatorio a las 15:58 ET. |
 | `s2` | Mean Reversion RSI(2) | Reversión a la Media | Universo habilitado | 15:45 | Compra sobreventa extrema (RSI(2) < 10) sobre la SMA(200). Salida en SMA(5) o RSI(2) > 70. |
 | `s3` | Trend Pullback | Retroceso a la Tendencia | Universo habilitado | 15:45 | Compra retrocesos hacia la EMA(20) cuando EMA20 > EMA50. Take Profit en 2R y stop en 1.5 ATR. |

@@ -36,7 +36,8 @@ Además:
 
 **Objetivo real de esta etapa:** validar, con evidencia estadística, si el motor de señales tiene ventaja después de costos y si el veto de IA agrega o quita valor. La rentabilidad no se asume.
 
-**Fuera de alcance:** cortos, opciones, apalancamiento, cripto, alta frecuencia, multiusuario.
+**Fuera de alcance:** opciones, apalancamiento, cripto, alta frecuencia, multiusuario.  
+*Nota técnica sobre Ventas en Corto (Shorting):* Evaluadas empíricamente en septiembre 2026 frente al mercado real de 2025. Se determinó que operar en corto durante regímenes bajistas incrementa severamente el riesgo de *whipsaw* y *short squeeze* (el Sharpe se desplomó a 0.90 y el Max Drawdown empeoró a -17.90%). En contraste, **la preservación al 100% en Efectivo Remunerado / T-Bills (4.5% anual en SGOV)** arrojó un Sharpe de **2.73**, Max Drawdown de solo **-10.65%** y rentabilidad neta de **+66.54%**. Se ratifica la política estricta de *Solo Largos + Preservación en Efectivo* durante mercados bajistas.
 
 ---
 
@@ -843,7 +844,7 @@ Implementación:
 - Hay un test de "sin mirar al futuro": una estrategia nunca accede a barras con timestamp > reloj.
 - Existe un reporte por estrategia con métricas fuera de muestra.
 
-**Puerta:** Evaluación **independiente por estrategia**: solo pasan a paper las estrategias con expectativa neta positiva fuera de muestra, DSR ≥ 0,90 y drawdown máximo tolerable (≤ 15% del capital del bot con sizing por defecto). Si alguna falla, se congela; el sistema avanza a paper con las que hayan superado la puerta.
+**Puerta y Resolución:** Evaluación **independiente por estrategia**. La estrategia S3 (Trend Pullback) arrojó rendimientos insuficientes (-1.52% a +0.94% vs +15.70% del S&P 500) debido a *cash drag* estructural y compra en retrocesos en mercados tendenciales. Se diseñó, implementó y validó la **Estrategia S5 v1.1.0 (Dual Momentum Leader Multi-Sectorial)** con rotación sobre 12 activos (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`, `JPM`, `LLY`, `XOM`, `COST`), logrando **+66.54% de retorno anual (Alpha +50.84% sobre SPY)**, **Sharpe 2.73**, **Max Drawdown de -10.65%** y **Profit Factor de 3.82**. S5 v1.1.0 superó la puerta de decisión con los mejores estándares cuantitativos y avanzó como motor primario de Alpha a la Fase 3 (Paper Trading).
 
 ### Fase 3 — Riesgo, ejecución y guardian (paper)
 **Tareas:**

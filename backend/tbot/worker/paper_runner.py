@@ -51,7 +51,7 @@ async def run_paper_session(
     symbols: list[str] | None = None,
     news_features_path: str | None = None,
 ) -> int:
-    symbols = symbols or ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
+    symbols = symbols or DualMomentumLeaderStrategy.DEFAULT_UNIVERSE
 
     print("\n" + "=" * 76)
     print("           SIMULACIÓN DE SESIÓN DE DECISIONES CON PAPER MONEY")
@@ -123,6 +123,8 @@ async def run_paper_session(
 
     for s in symbols:
         csv_p = Path(f"data/historical/{s}_daily.csv")
+        if not csv_p.exists():
+            csv_p = Path(f"../data/historical/{s}_daily.csv")
         if csv_p.exists():
             df = loader.load_from_csv(csv_p, s)
         else:
@@ -241,10 +243,10 @@ async def run_paper_session(
                 news_store=news_store,
             )
 
-    print(
-        f"\n[{t_1545.strftime('%H:%M:%S')} ET] 3b. Evaluación Estrategia S5 (Dual Momentum Leader v1.0.0):"
-    )
     strat_s5 = DualMomentumLeaderStrategy()
+    print(
+        f"\n[{t_1545.strftime('%H:%M:%S')} ET] 3b. Evaluación Estrategia S5 (Dual Momentum Leader v{strat_s5.version}):"
+    )
     ctx_s5 = StrategyContext(
         now=t_1545,
         regime=MarketRegime.BULL_CALM,
@@ -255,7 +257,7 @@ async def run_paper_session(
     )
     s5_signals = strat_s5.generate(ctx_s5)
     if not s5_signals:
-        print("   [INFO] S5 no detectó nuevos líderes con momentum positivo sobre EMA20.")
+        print("   [INFO] S5 no detectó nuevos líderes con momentum positivo sobre EMA.")
     else:
         print(
             f"   [SEÑALES DETECTADAS] S5 generó {len(s5_signals)} señal(es). Evaluando cadena de decisión:"
