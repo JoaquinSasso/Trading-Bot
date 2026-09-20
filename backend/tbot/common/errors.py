@@ -30,6 +30,29 @@ class PriceAnomalyError(MarketDataError):
     """Divergencia anómala entre el precio IEX en tiempo real y el cierre SIP."""
 
 
+class RateLimitExceededError(MarketDataError):
+    """Límite de peticiones a la API excedido (HTTP 429 o presupuesto de rate limiter agotado)."""
+
+    def __init__(
+        self,
+        message: str = "Rate limit exceeded (180 req/min budget)",
+        retry_after: float | None = None,
+        limit: int = 180,
+        details: dict | None = None,
+    ) -> None:
+        merged_details = details.copy() if details else {}
+        if retry_after is not None:
+            merged_details["retry_after"] = retry_after
+        merged_details["limit"] = limit
+        super().__init__(message, details=merged_details)
+        self.retry_after = retry_after
+        self.limit = limit
+
+
+class ProviderUnavailableError(MarketDataError):
+    """Proveedor de datos de mercado no disponible o error 5xx persistente tras reintentos."""
+
+
 class StrategyError(TBotError):
     """Error en la lógica o ejecución de una estrategia."""
 

@@ -87,6 +87,71 @@ class RegimeSnapshot(Base):
     regime: Mapped[str] = mapped_column(String(32), nullable=False)
     inputs: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
+    def __init__(
+        self,
+        *args: Any,
+        ts: datetime | None = None,
+        timestamp: datetime | None = None,
+        regime: str | None = None,
+        inputs: dict[str, Any] | None = None,
+        spy_close: Decimal | float | None = None,
+        sma_200: Decimal | float | None = None,
+        realized_vol_20d: float | None = None,
+        vol_70th_percentile: float | None = None,
+        is_blocked: bool | None = None,
+        **kwargs: Any,
+    ) -> None:
+        effective_ts = ts if ts is not None else timestamp
+        effective_inputs = dict(inputs) if inputs is not None else {}
+        if spy_close is not None and "spy_close" not in effective_inputs:
+            effective_inputs["spy_close"] = float(spy_close)
+        if sma_200 is not None and "sma_200" not in effective_inputs:
+            effective_inputs["sma_200"] = float(sma_200)
+        if realized_vol_20d is not None and "realized_vol_20d" not in effective_inputs:
+            effective_inputs["realized_vol_20d"] = float(realized_vol_20d)
+        if vol_70th_percentile is not None and "vol_70th_percentile" not in effective_inputs:
+            effective_inputs["vol_70th_percentile"] = float(vol_70th_percentile)
+        if is_blocked is not None and "is_blocked" not in effective_inputs:
+            effective_inputs["is_blocked"] = bool(is_blocked)
+
+        super().__init__(
+            *args,
+            ts=effective_ts,
+            regime=regime,
+            inputs=effective_inputs,
+            **kwargs,
+        )
+
+    @property
+    def timestamp(self) -> datetime:
+        return self.ts
+
+    @property
+    def is_blocked(self) -> bool:
+        if self.inputs and "is_blocked" in self.inputs:
+            return bool(self.inputs["is_blocked"])
+        return self.regime == "UNKNOWN"
+
+    @property
+    def spy_close(self) -> Decimal | None:
+        val = self.inputs.get("spy_close") if self.inputs else None
+        return Decimal(str(val)) if val is not None else None
+
+    @property
+    def sma_200(self) -> Decimal | None:
+        val = self.inputs.get("sma_200") if self.inputs else None
+        return Decimal(str(val)) if val is not None else None
+
+    @property
+    def realized_vol_20d(self) -> float | None:
+        val = self.inputs.get("realized_vol_20d") if self.inputs else None
+        return float(val) if val is not None else None
+
+    @property
+    def vol_70th_percentile(self) -> float | None:
+        val = self.inputs.get("vol_70th_percentile") if self.inputs else None
+        return float(val) if val is not None else None
+
 
 class MarketEvent(Base):
     """Eventos macroeconómicos y balances corporativos."""
