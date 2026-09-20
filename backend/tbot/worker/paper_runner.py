@@ -31,6 +31,7 @@ from tbot.execution.router import OrderRouter
 from tbot.execution.simulated_broker_adapter import SimulatedBrokerAdapter
 from tbot.guardian.guardian import PositionGuardian
 from tbot.news.models import NewsFeatures
+from tbot.news.store import HistoricalNewsFeatureStore
 from tbot.regime.filter import MarketRegime
 from tbot.risk.circuit_breakers import CircuitBreakerManager
 from tbot.risk.gate import RiskGate
@@ -45,8 +46,9 @@ async def run_paper_session(
     target_date: date = date(2025, 11, 14),
     broker_type: str = "simulated",
     capital: float = 2000.0,
-    veto_mode: str = "required",
+    veto_mode: str = "quantitative",
     symbols: list[str] | None = None,
+    news_features_path: str | None = None,
 ) -> int:
     symbols = symbols or ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
 
@@ -55,6 +57,21 @@ async def run_paper_session(
     print(f"  Fecha de Simulación: {target_date} | Capital Asignado: ${capital:,.2f}")
     print(f"  Modo Broker: {broker_type.upper()} | Modo Veto IA: {veto_mode.upper()}")
     print("=" * 76 + "\n")
+
+    # 0. Carga de Almacén de Características de Noticias (si existe)
+    news_store: HistoricalNewsFeatureStore | None = None
+    if news_features_path:
+        news_store = HistoricalNewsFeatureStore.from_file(news_features_path)
+        print(f"[INFO] Almacén de noticias cargado desde: {news_features_path}")
+    else:
+        parquet_p = Path("data/news_features/historical_news_features.parquet")
+        csv_p = Path("data/news_features/historical_news_features.csv")
+        if parquet_p.exists():
+            news_store = HistoricalNewsFeatureStore.from_file(parquet_p)
+            print(f"[INFO] Almacén de noticias auto-detectado: {parquet_p}")
+        elif csv_p.exists():
+            news_store = HistoricalNewsFeatureStore.from_file(csv_p)
+            print(f"[INFO] Almacén de noticias auto-detectado: {csv_p}")
 
     # 1. Inicialización de Componentes de Ejecución y Riesgo
     broker: BrokerAdapter
@@ -212,6 +229,7 @@ async def run_paper_session(
                 current_prices,
                 t_1545,
                 decision_journal,
+                news_store=news_store,
             )
 
     # ------------------------------------------------------------------
@@ -294,25 +312,30 @@ async def _process_signal(
     current_prices: dict[str, Decimal],
     now: datetime,
     journal: list[dict[str, str]],
+    news_store: HistoricalNewsFeatureStore | None = None,
 ) -> None:
-    # 1. Filtro de Veto de IA
-    dummy_news = NewsFeatures(
-        symbol=sig.symbol,
-        window="24h",
-        ts=now,
-        n_items=3,
-        sentiment_mean=0.25,
-        sentiment_min=-0.1,
-        negative_share=0.05,
-        sources=["AlpacaNews"],
-        top_topics=["earnings", "momentum"],
-    )
+    # 1. Filtro de Veto de IA / Noticias Cuantitativas
+    if news_store is not None:
+        news = news_store.get_features(symbol=sig.symbol, as_of=now)
+    else:
+        news = NewsFeatures(
+            symbol=sig.symbol,
+            window="24h",
+            ts=now,
+            n_items=3,
+            sentiment_mean=0.25,
+            sentiment_min=-0.1,
+            negative_share=0.05,
+            sources=["AlpacaNews"],
+            top_topics=["earnings", "momentum"],
+        )
+
     veto_res = await veto.review(
         signal=sig,
         features={"score": sig.score},
         regime="BULL_CALM",
         events={},
-        news=dummy_news,
+        news=news,
         now=now,
     )
 
@@ -398,6 +421,12 @@ def main() -> int:
         choices=["quantitative", "required", "advisory", "off"],
         help="Modo de veto: quantitative (reglas matemáticas sobre FinBERT), required, advisory, off",
     )
+    parser.add_argument(
+        "--news-features",
+        type=str,
+        default=None,
+        help="Ruta a archivo .parquet o .csv con características históricas de noticias",
+    )
 
     args = parser.parse_args()
     target_date = datetime.strptime(args.date, "%Y-%m-%d").date()
@@ -408,6 +437,7 @@ def main() -> int:
             broker_type=args.broker,
             capital=args.capital,
             veto_mode=args.veto,
+            news_features_path=args.news_features,
         )
     )
 

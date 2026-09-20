@@ -1,0 +1,13 @@
+# Dependencias para inferencia de FinBERT con GPU (CUDA) o CPU en PC de escritorio
+# Para soporte CUDA en Windows/Linux con NVIDIA:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+transformers>=4.40.0
+torch>=2.2.0
+pyarrow>=14.0.0
+tqdm>=4.66.0
+alpaca-py>=0.38.0
+pandas>=2.2.0
+numpy>=1.26.0
+pyyaml>=6.0.2
+python-dotenv>=1.0.0
