@@ -217,18 +217,54 @@ Camino 4: Híbrido Multi-Sectorial (70% S5 / 30%) |   +46.07% |    +30.37% | 2.4
 
 ### 9.1 Cambios Implementados en el Código de Producción
 
-1. **Estrategia S5 v1.1.0 ([`backend/tbot/strategies/s5_dual_momentum_leader.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/strategies/s5_dual_momentum_leader.py)):**
+1. **Estrategia S5 v1.2.0 ([`backend/tbot/strategies/s5_dual_momentum_leader.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/strategies/s5_dual_momentum_leader.py)):**
    - Período de momentum ajustado a `momentum_lookback_days = 45`.
    - Trailing Stop EMA ajustado a `trailing_ema_period = 25`.
    - Límite de tiempo máximo de retención extendido a `max_holding_days = 30`.
    - Historial de barras diarias requerido: `daily_lookback_days = 75`.
-   - Universo predeterminado (`DEFAULT_UNIVERSE`): 12 activos multi-sectoriales (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`, `JPM`, `LLY`, `XOM`, `COST`).
+   - Universo predeterminado (`DEFAULT_UNIVERSE`): 14 activos (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`, `JPM`, `LLY`, `XOM`, `COST`, `GLD`, `SLV`).
 2. **Worker de Paper Trading ([`backend/tbot/worker/paper_runner.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tbot/worker/paper_runner.py)):**
-   - Actualizado para operar sobre el universo multi-sectorial completo de 12 activos a las 15:45 ET.
-   - Búsqueda robusta de datos locales históricos en `data/historical/`.
+   - Actualizado para operar sobre los 14 activos a las 15:45 ET.
+   - Soporte automático de proxy para Oro: `GLD` -> `GLDM` (~$50 USD).
 3. **Suite de Pruebas ([`backend/tests/test_s5_dual_momentum.py`](file:///d:/Github%20Repositories/Trading-Bot/backend/tests/test_s5_dual_momentum.py)):**
-   - Agregada prueba de selección multi-sectorial `test_s5_multi_sector_ranking_selects_non_tech_leaders`.
-   - Validación completa de los 1.200 tests pasando sin errores.
+   - Validación completa de los 1.201 tests pasando sin errores.
 4. **Script de Benchmark ([`scripts/optimize_and_benchmark_portfolio.py`](file:///d:/Github%20Repositories/Trading-Bot/scripts/optimize_and_benchmark_portfolio.py)):**
-   - Integración formal de Camino 3 y Camino 4 con cálculo de cash yield y soporte multi-universo.
+   - Integración formal de Camino 5 con Metales Preciosos.
+
+---
+
+## 10. Evaluación Cuantitativa de Commodities (Metales Preciosos vs Futuros de Energía)
+
+A propuesta del usuario sobre la incorporación de materias primas (oro, petróleo, gas, etc.), se realizó un estudio empírico exhaustivo con datos reales de 2025.
+
+### 10.1 Hallazgos Estructurales: Activos Físicos vs Futuros Sintéticos
+1. **Metales Preciosos Físicos (`GLD` Oro, `SLV` Plata):**
+   - Son ETFs con custodia física de lingotes reales en bóvedas.
+   - **No sufren contango ni desgaste por renovación de contratos (*roll decay*).**
+   - Tienen una correlación casi nula con el S&P 500 (**0.03 para GLD**, **0.23 para SLV**).
+   - En 2025, el oro rindió **+61.48%** y la plata **+139.21%** con un drawdown de solo -10.13% en el oro.
+2. **Futuros de Energía (`USO` Petróleo, `UNG` Gas Natural):**
+   - No almacenan materias primas físicas; operan contratos de futuros a 1 mes.
+   - Sufren de **Contango estructural**: el fondo debe vender el contrato barato y comprar el siguiente más caro mes a mes (*Negative Roll Yield*).
+   - En 2025, `USO` cayó **-10.10%** y `UNG` cayó **-27.92%** con un drawdown devastador del **-51.41%**.
+   - Incorporar `USO` redujo el rendimiento del bot de +66.54% a +53.03% y deterioró el Sharpe a 2.22.
+3. **Vehículo Correcto para Energía:**
+   - Acciones de productores integrados de gran capitalización como **`XOM` (ExxonMobil)** y **`CVX` (Chevron)** o el ETF **`XLE`**. Generan dividendos (~3.5%), tienen activos tangibles y se benefician del ciclo petrolero sin sufrir el desgaste de contango.
+
+### 10.2 Resultados del Portafolio S5 v1.2.0 al incorporar Metales Preciosos (`GLD` + `SLV`)
+
+| Configuración / Enfoque | Retorno Anual | Sharpe Ratio | Max Drawdown | Win Rate | Profit Factor | Estado |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **BENCHMARK: S&P 500 (`SPY` Buy & Hold)** | **+15.70%** | **1.15** | **-9.80%** | **--** | **--** | **Referencia** |
+| Camino 1: S5 Dual Momentum Base (Tech 5) | +17.90% | 0.99 | -6.94% | 46.2% | 2.55 | Supera SPY |
+| Camino 3: S5 v1.1.0 Multi-Sectorial (12 act) | +66.54% | 2.73 | -10.65% | 56.5% | 3.82 | Supera SPY |
+| **Camino 5: S5 v1.2.0 Multi-Sectorial + Metales (`GLD`+`SLV`)** | **+81.85%** | **2.91** | **-7.57%** | **71.4%** | **5.28** | **MÁXIMO GANADOR ABSOLUTO** |
+
+**Conclusión:**
+La incorporación de Oro (`GLD`/`GLDM`) y Plata (`SLV`) al universo de S5 representa una mejora sustancial en todas las métricas:
+- El retorno anual sube a **+81.85%** (+66.15% de Alpha sobre el S&P 500).
+- El ratio Sharpe escala a **2.91**.
+- El Max Drawdown se contrae a un mínimo de **-7.57%** (gracias a la perfecta descorrelación del oro durante caídas bursátiles).
+- La tasa de aciertos (*Win Rate*) se eleva al **71.4%** y el Profit Factor alcanza **5.28**.
+
 

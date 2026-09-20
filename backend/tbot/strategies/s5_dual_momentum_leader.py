@@ -31,7 +31,7 @@ class DualMomentumLeaderStrategy:
     """Implementación de S5 - Dual Momentum Leader optimizada."""
 
     id: str = "dual_momentum_leader"
-    version: str = "1.1.0"
+    version: str = "1.2.0"
     schedule: list[str] = ["15:45 America/New_York"]
     allowed_regimes: set[MarketRegime] = {
         MarketRegime.BULL_CALM,
@@ -39,9 +39,9 @@ class DualMomentumLeaderStrategy:
     }
     allows_open_window: bool = False
 
-    # Universo Multi-Sectorial Oficial (Tech + Finanzas, Salud, Energía, Consumo)
+    # Universo Multi-Sectorial y Metales Preciosos Oficial (Tech, Finanzas, Salud, Energía, Consumo y Metales)
     DEFAULT_UNIVERSE: list[str] = [
-        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST"
+        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST", "GLD", "SLV"
     ]
     universe: list[str] | None = None
 

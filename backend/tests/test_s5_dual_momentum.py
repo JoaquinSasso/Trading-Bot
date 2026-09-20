@@ -36,7 +36,7 @@ def _create_synthetic_bars(
 def test_s5_metadata_and_properties():
     strat = DualMomentumLeaderStrategy()
     assert strat.id == "dual_momentum_leader"
-    assert strat.version == "1.1.0"
+    assert strat.version == "1.2.0"
     assert strat.momentum_lookback_days == 45
     assert strat.trailing_ema_period == 25
     assert strat.top_n_leaders == 2
@@ -49,6 +49,8 @@ def test_s5_metadata_and_properties():
     assert "LLY" in strat.universe
     assert "XOM" in strat.universe
     assert "COST" in strat.universe
+    assert "GLD" in strat.universe
+    assert "SLV" in strat.universe
 
 
 def test_s5_regime_gating_preserves_capital_in_bear_market():
@@ -231,3 +233,34 @@ def test_s5_multi_sector_ranking_selects_non_tech_leaders():
     assert signals[0].features["rank"] == 1
     assert signals[1].symbol == "JPM"
     assert signals[1].features["rank"] == 2
+
+
+def test_s5_precious_metals_ranking_selects_gold_and_silver():
+    strat = DualMomentumLeaderStrategy(momentum_lookback_days=45, top_n_leaders=2)
+    eval_dt = datetime(2025, 6, 10, 15, 45)
+
+    # SLV (Plata): +80% a 45 días
+    df_slv = _create_synthetic_bars(20.0, 36.0, n_days=80, end_date=eval_dt)
+    # GLD (Oro): +50% a 45 días
+    df_gld = _create_synthetic_bars(180.0, 270.0, n_days=80, end_date=eval_dt)
+    # AAPL (Tech): +10% a 45 días
+    df_aapl = _create_synthetic_bars(100.0, 110.0, n_days=80, end_date=eval_dt)
+
+    ctx = StrategyContext(
+        now=eval_dt,
+        regime=MarketRegime.BULL_CALM,
+        daily_bars={"SLV": df_slv, "GLD": df_gld, "AAPL": df_aapl},
+        current_prices={
+            "SLV": Decimal("36.00"),
+            "GLD": Decimal("270.00"),
+            "AAPL": Decimal("110.00"),
+        },
+    )
+
+    signals = strat.generate(ctx)
+    assert len(signals) == 2
+    assert signals[0].symbol == "SLV"
+    assert signals[0].features["rank"] == 1
+    assert signals[1].symbol == "GLD"
+    assert signals[1].features["rank"] == 2
+

@@ -71,7 +71,7 @@ def load_all_market_data(data_dir: Path, symbols: list[str] | None = None) -> di
     loader = HistoricalDataLoader(data_dir=data_dir)
     daily_data: dict[str, pd.DataFrame] = {}
     target_symbols = symbols or [
-        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST"
+        "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST", "GLD", "SLV"
     ]
 
     for sym in target_symbols:
@@ -846,6 +846,7 @@ def main() -> int:
         use_finbert=True,
         finbert_store=finbert_store,
         annual_cash_yield=0.045,
+        symbols=["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST"],
     )
     results.append(res_s5_multi)
     print(f" -> Retorno: {res_s5_multi.total_return_pct:+6.2f}% | Alpha vs SPY: {res_s5_multi.alpha_vs_spy:+6.2f}% | Sharpe: {res_s5_multi.sharpe_ratio:4.2f} | MaxDD: {res_s5_multi.max_drawdown_pct:4.2f}% | Trades: {res_s5_multi.total_trades}")
@@ -862,6 +863,25 @@ def main() -> int:
     )
     results.append(res_hybrid_multi)
     print(f" -> Retorno: {res_hybrid_multi.total_return_pct:+6.2f}% | Alpha vs SPY: {res_hybrid_multi.alpha_vs_spy:+6.2f}% | Sharpe: {res_hybrid_multi.sharpe_ratio:4.2f} | MaxDD: {res_hybrid_multi.max_drawdown_pct:4.2f}% | Trades: {res_hybrid_multi.total_trades}")
+
+    # Camino 5: S5 v1.2.0 Multi-Sectorial + Metales Preciosos (14 activos: Base 12 + GLD + SLV)
+    print("\nSimulando: Camino 5: S5 v1.2.0 Multi + Metales (14 activos, GLD/SLV)...")
+    res_s5_metals = run_s5_momentum_simulation(
+        daily_data=daily_data,
+        start_date=start_date,
+        end_date=end_date,
+        config_name="Camino 5: S5 v1.2.0 Multi + Metales (14 act, GLD/SLV)",
+        initial_capital=2000.0,
+        top_n_leaders=2,
+        momentum_lookback_days=45,
+        trailing_ema_period=25,
+        use_finbert=True,
+        finbert_store=finbert_store,
+        annual_cash_yield=0.045,
+        symbols=["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST", "GLD", "SLV"],
+    )
+    results.append(res_s5_metals)
+    print(f" -> Retorno: {res_s5_metals.total_return_pct:+6.2f}% | Alpha vs SPY: {res_s5_metals.alpha_vs_spy:+6.2f}% | Sharpe: {res_s5_metals.sharpe_ratio:4.2f} | MaxDD: {res_s5_metals.max_drawdown_pct:4.2f}% | Trades: {res_s5_metals.total_trades}")
 
     # Tabla Comparativa Final
     print("\n" + "=" * 90)

@@ -140,8 +140,8 @@ async def run_paper_session(
             if isinstance(broker, SimulatedBrokerAdapter):
                 broker.set_current_price(s, cur_c)
 
-    # Precios de proxy (SPYM y QQQM)
-    # En 2025: SPYM ~ SPY / 10, QQQM ~ QQQ
+    # Precios de proxy (SPYM, QQQM, GLDM)
+    # En 2025: SPYM ~ SPY / 10, QQQM ~ QQQ, GLDM ~ GLD / 5
     if "SPY" in current_prices:
         spym_p = (current_prices["SPY"] / Decimal("10")).quantize(Decimal("0.01"))
         current_prices["SPYM"] = spym_p
@@ -153,6 +153,12 @@ async def run_paper_session(
         current_prices["QQQM"] = qqqm_p
         if isinstance(broker, SimulatedBrokerAdapter):
             broker.set_current_price("QQQM", qqqm_p)
+
+    if "GLD" in current_prices:
+        gldm_p = (current_prices["GLD"] / Decimal("5")).quantize(Decimal("0.01"))
+        current_prices["GLDM"] = gldm_p
+        if isinstance(broker, SimulatedBrokerAdapter):
+            broker.set_current_price("GLDM", gldm_p)
 
     # ------------------------------------------------------------------
     # FASE 1: 09:20 ET - Rutina Pre-Mercado
