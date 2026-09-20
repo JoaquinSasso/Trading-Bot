@@ -109,16 +109,22 @@ class RegimeFilter:
     def classify(self, spy_daily_bars: pd.DataFrame) -> RegimeSnapshot:
         """Clasifica el régimen de mercado a partir de un DataFrame de barras diarias de SPY."""
         if not isinstance(spy_daily_bars, pd.DataFrame):
-            raise TypeError(f"spy_daily_bars must be a pd.DataFrame, got {type(spy_daily_bars).__name__}")
+            raise TypeError(
+                f"spy_daily_bars must be a pd.DataFrame, got {type(spy_daily_bars).__name__}"
+            )
 
         if spy_daily_bars.empty:
-            return self._build_unknown_snapshot(reason="EMPTY_DATAFRAME", spy_daily_bars=spy_daily_bars)
+            return self._build_unknown_snapshot(
+                reason="EMPTY_DATAFRAME", spy_daily_bars=spy_daily_bars
+            )
 
         df = spy_daily_bars
         if "symbol" in df.columns:
             df = df[df["symbol"].str.upper() == "SPY"]
             if df.empty:
-                return self._build_unknown_snapshot(reason="NO_SPY_BARS_FOUND", spy_daily_bars=spy_daily_bars)
+                return self._build_unknown_snapshot(
+                    reason="NO_SPY_BARS_FOUND", spy_daily_bars=spy_daily_bars
+                )
 
         close_col = None
         for col in ("close", "Close"):
@@ -158,7 +164,9 @@ class RegimeFilter:
             return self._build_unknown_snapshot(reason="LATEST_CLOSE_IS_NAN", spy_daily_bars=df)
 
         if (close_series <= 0).any():
-            return self._build_unknown_snapshot(reason="NON_POSITIVE_PRICE_DETECTED", spy_daily_bars=df)
+            return self._build_unknown_snapshot(
+                reason="NON_POSITIVE_PRICE_DETECTED", spy_daily_bars=df
+            )
 
         sma_series = sma(close_series, period=self.sma_period)
         curr_sma = sma_series.iloc[-1]
@@ -182,7 +190,7 @@ class RegimeFilter:
                 sma_val=float(curr_sma),
             )
 
-        lookback_vols = valid_vols.iloc[-self.vol_lookback_bars:]
+        lookback_vols = valid_vols.iloc[-self.vol_lookback_bars :]
         p70 = float(np.percentile(lookback_vols, self.vol_percentile))
 
         curr_close = float(close_series.iloc[-1])

@@ -243,7 +243,6 @@ class TestDynamicThresholdCalibrationEdgeCases:
         assert calibrate_freshness(series) == 180.0
 
 
-
 # ============================================================================
 # 4. NON-MONOTONIC MESSAGE ARRIVAL & TIMESTAMP EDGE CASES
 # ============================================================================
@@ -270,7 +269,9 @@ class TestNonMonotonicTimestampsStress:
     def test_out_of_order_quote_regresses_symbol_freshness(self, sim_clock: SimulatedClock) -> None:
         """VERIFICACIÓN DE REMEDIACIÓN: Cotización fuera de orden no debe sobreescribir la cotización fresca."""
         monitor = SymbolFreshnessMonitor(clock=sim_clock)
-        fresh_quote = PriceQuote(symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.02"), timestamp=sim_clock.now())
+        fresh_quote = PriceQuote(
+            symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.02"), timestamp=sim_clock.now()
+        )
         monitor.record_quote("SPY", fresh_quote)
         is_fresh, reason = monitor.check_symbol_freshness("SPY")
         assert is_fresh is True and reason == "OK"
@@ -306,8 +307,9 @@ class TestNonMonotonicTimestampsStress:
         assert monitor.state == FeedHealthState.STALE
         assert monitor.is_fallback_active is True
 
-
-    def test_entry_price_rejects_excessive_future_timestamp(self, sim_clock: SimulatedClock) -> None:
+    def test_entry_price_rejects_excessive_future_timestamp(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """get_entry_price enforces a strict 1s upper bound on future timestamps."""
         guard = StalenessGuard(clock=sim_clock, enforce_market_hours=False)
 
@@ -339,7 +341,9 @@ class TestNonMonotonicTimestampsStress:
         assert price_ok == Decimal("500.01")
         assert mode_ok == EntryPriceMode.MIDPOINT
 
-    def test_validate_entry_crashes_on_mixed_naive_aware_timestamps(self, sim_clock: SimulatedClock) -> None:
+    def test_validate_entry_crashes_on_mixed_naive_aware_timestamps(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """VERIFICACIÓN DE REMEDIACIÓN: validate_entry normaliza timestamps mixtos (naive vs aware) a UTC."""
         guard = StalenessGuard(clock=sim_clock, enforce_market_hours=False)
         guard.record_message()
@@ -363,7 +367,6 @@ class TestNonMonotonicTimestampsStress:
         assert is_valid is True
         assert reason == "OK"
         assert price == Decimal("500.01")
-
 
 
 # ============================================================================
@@ -433,7 +436,9 @@ class TestExchangeHaltTransitionsAndDetection:
         assert ok is False
         assert reason == "SYMBOL_HALTED"
 
-    def test_potential_halt_detection_when_feed_exceeds_tau(self, sim_clock: SimulatedClock) -> None:
+    def test_potential_halt_detection_when_feed_exceeds_tau(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """Symbol data age exceeding tau_symbol triggers POTENTIAL_HALT even without exchange status."""
         monitor = SymbolFreshnessMonitor(clock=sim_clock)
         quote = PriceQuote("SPY", Decimal("500.00"), Decimal("500.02"), timestamp=sim_clock.now())
@@ -449,7 +454,9 @@ class TestExchangeHaltTransitionsAndDetection:
         assert allowed is False
         assert entry_reason == "STALE_SYMBOL_FEED"
 
-    def test_case_and_whitespace_insensitivity_in_halt_codes(self, sim_clock: SimulatedClock) -> None:
+    def test_case_and_whitespace_insensitivity_in_halt_codes(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """Halt status codes are stripped and uppercased defensively."""
         monitor = SymbolFreshnessMonitor(clock=sim_clock)
         monitor.record_exchange_status("SPY", "  h  ")
@@ -469,7 +476,9 @@ class TestCrossFeedAnomalyStress:
         """100x price spike and 99% price crash are rejected as PRICE_ANOMALY."""
         guard = StalenessGuard()
         # 100x spike
-        ok, reason = guard.check_price_anomaly(Decimal("50000.00"), Decimal("500.00"), Decimal("1.00"))
+        ok, reason = guard.check_price_anomaly(
+            Decimal("50000.00"), Decimal("500.00"), Decimal("1.00")
+        )
         assert ok is False and reason == "PRICE_ANOMALY"
 
         # 99% crash

@@ -51,16 +51,16 @@ def sim_clock() -> SimulatedClock:
 def official_holidays_2026() -> set[date]:
     """Official 2026 US market holidays."""
     return {
-        date(2026, 1, 1),   # New Year's Day
+        date(2026, 1, 1),  # New Year's Day
         date(2026, 1, 19),  # MLK Day
         date(2026, 2, 16),  # Washington's Birthday (Presidents' Day)
-        date(2026, 4, 3),   # Good Friday
+        date(2026, 4, 3),  # Good Friday
         date(2026, 5, 25),  # Memorial Day
         date(2026, 6, 19),  # Juneteenth
-        date(2026, 7, 3),   # Independence Day (Observed)
-        date(2026, 9, 7),   # Labor Day
-        date(2026, 11, 26), # Thanksgiving
-        date(2026, 12, 25), # Christmas
+        date(2026, 7, 3),  # Independence Day (Observed)
+        date(2026, 9, 7),  # Labor Day
+        date(2026, 11, 26),  # Thanksgiving
+        date(2026, 12, 25),  # Christmas
     }
 
 
@@ -193,7 +193,9 @@ class TestDefect2NetworkOutageFailClosed:
         def raise_timeout(req: httpx.Request) -> httpx.Response:
             raise httpx.ConnectTimeout("Connection timed out to Finnhub")
 
-        cal.earnings_client.http_client = httpx.AsyncClient(transport=httpx.MockTransport(raise_timeout))
+        cal.earnings_client.http_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(raise_timeout)
+        )
 
         await cal.refresh_earnings(["TSLA"])
 
@@ -218,7 +220,9 @@ class TestDefect2NetworkOutageFailClosed:
                 )
             return httpx.Response(500, json={"error": "Finnhub server failure"})
 
-        cal.earnings_client.http_client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        cal.earnings_client.http_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(mock_handler)
+        )
 
         await cal.refresh_earnings(["AAPL", "MSFT", "AMZN"])
 
@@ -431,17 +435,21 @@ class TestDefect4RegimeFilterDeduplication:
         assert snap.inputs["is_blocked"] is False
         assert snap.inputs["reason"] == "OK"
 
-    def test_regime_unsorted_duplicated_date_keeps_last_bar(self, sim_clock: SimulatedClock) -> None:
+    def test_regime_unsorted_duplicated_date_keeps_last_bar(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """RegimeFilter sorts dates before dropping duplicates with keep='last'."""
         rf = RegimeFilter(clock=sim_clock, min_bars=200)
 
         dates = list(pd.date_range("2024-01-01", periods=200, freq="B"))
         # Add an older duplicated bar at the end with an outdated close price
-        df = pd.DataFrame({
-            "symbol": "SPY",
-            "Date": dates + [dates[0]],
-            "Close": [500.0] * 200 + [999.9],  # Outlier close on the duplicated oldest date
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": "SPY",
+                "Date": dates + [dates[0]],
+                "Close": [500.0] * 200 + [999.9],  # Outlier close on the duplicated oldest date
+            }
+        )
 
         snap = rf.classify(df)
         assert snap.inputs["bar_count"] == 200
@@ -486,7 +494,12 @@ class TestDefect5EventsSetterNaiveDatetime:
         """Assigning a mix of naive and aware events normalizes all timestamps."""
         cal = EventCalendar(clock=sim_clock)
         events = [
-            {"name": "NFP", "type": "NFP", "timestamp": datetime(2026, 5, 1, 12, 30), "impact": "high"},
+            {
+                "name": "NFP",
+                "type": "NFP",
+                "timestamp": datetime(2026, 5, 1, 12, 30),
+                "impact": "high",
+            },
             {
                 "name": "FOMC",
                 "type": "FOMC",
@@ -577,7 +590,16 @@ class TestAdversarialEdgeCasesAndStress:
         """
         mf = MacroFilter(clock=sim_clock)
         fomc_utc = datetime(2026, 5, 6, 23, 30, tzinfo=UTC)  # 19:30 ET
-        mf.load_events([{"name": "FOMC Statement", "type": "FOMC", "timestamp": fomc_utc, "impact": "critical"}])
+        mf.load_events(
+            [
+                {
+                    "name": "FOMC Statement",
+                    "type": "FOMC",
+                    "timestamp": fomc_utc,
+                    "impact": "critical",
+                }
+            ]
+        )
 
         # Query at 2026-05-07 00:00:00 UTC -> 2026-05-06 20:00:00 ET (same ET day!)
         query_utc = datetime(2026, 5, 7, 0, 0, tzinfo=UTC)
@@ -595,14 +617,12 @@ class TestAdversarialEdgeCasesAndStress:
             sym = "AAPL" if "AAPL" in url_str else "MSFT"
             return httpx.Response(
                 200,
-                json={
-                    "earningsCalendar": [
-                        {"symbol": sym, "date": "2026-06-01", "hour": "amc"}
-                    ]
-                },
+                json={"earningsCalendar": [{"symbol": sym, "date": "2026-06-01", "hour": "amc"}]},
             )
 
-        cal.earnings_client.http_client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+        cal.earnings_client.http_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(mock_handler)
+        )
 
         # Launch 10 concurrent refreshes
         tasks = [cal.refresh_earnings(["AAPL", "MSFT"]) for _ in range(10)]

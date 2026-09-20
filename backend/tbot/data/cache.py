@@ -163,7 +163,17 @@ class DailyBarCache:
 
         if target_session is None:
             return pd.DataFrame(
-                columns=["symbol", "date", "open", "high", "low", "close", "volume", "adjusted", "feed"]
+                columns=[
+                    "symbol",
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "adjusted",
+                    "feed",
+                ]
             )
 
         try:
@@ -232,7 +242,8 @@ class DailyBarCache:
         end: date,
         feed: str = "sip_delayed",
         adjusted: bool = True,
-        fetch_fn: Callable[[list[str], date, date, str, bool], Awaitable[list[dict[str, Any]]]] | None = None,
+        fetch_fn: Callable[[list[str], date, date, str, bool], Awaitable[list[dict[str, Any]]]]
+        | None = None,
         session: AsyncSession | None = None,
     ) -> pd.DataFrame:
         """Estrategia completa: DB cache -> missing ranges -> Alpaca fetch -> DB persist -> sorted DataFrame.
@@ -241,7 +252,17 @@ class DailyBarCache:
         """
         if start > end:
             return pd.DataFrame(
-                columns=["symbol", "date", "open", "high", "low", "close", "volume", "adjusted", "feed"]
+                columns=[
+                    "symbol",
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "adjusted",
+                    "feed",
+                ]
             )
 
         norm_feed = self._normalize_feed(feed)
@@ -255,7 +276,9 @@ class DailyBarCache:
             owns_session = True
 
         if target_session is None:
-            logger.warning("Bypassing daily bar cache: no active database session or factory provided")
+            logger.warning(
+                "Bypassing daily bar cache: no active database session or factory provided"
+            )
             if fetch_fn is not None:
                 raw_bars = await fetch_fn(clean_symbols, start, end, norm_feed, adjusted)
                 return self._to_dataframe(raw_bars)
@@ -295,7 +318,10 @@ class DailyBarCache:
                 try:
                     await self.save_bars(target_session, new_bars_to_persist)
                 except SQLAlchemyError as exc:
-                    logger.warning("Failed to persist daily bars to cache; continuing with memory result", error=str(exc))
+                    logger.warning(
+                        "Failed to persist daily bars to cache; continuing with memory result",
+                        error=str(exc),
+                    )
                     await target_session.rollback()
 
             # 4. Construir DataFrame final
@@ -303,34 +329,42 @@ class DailyBarCache:
             for _sym, date_dict in cached_by_symbol.items():
                 for _d, b in date_dict.items():
                     if isinstance(b, DailyBar):
-                        all_records.append({
-                            "symbol": b.symbol,
-                            "date": b.date,
-                            "open": float(b.open),
-                            "high": float(b.high),
-                            "low": float(b.low),
-                            "close": float(b.close),
-                            "volume": float(b.volume),
-                            "adjusted": b.adjusted,
-                            "feed": b.feed,
-                        })
+                        all_records.append(
+                            {
+                                "symbol": b.symbol,
+                                "date": b.date,
+                                "open": float(b.open),
+                                "high": float(b.high),
+                                "low": float(b.low),
+                                "close": float(b.close),
+                                "volume": float(b.volume),
+                                "adjusted": b.adjusted,
+                                "feed": b.feed,
+                            }
+                        )
                     elif isinstance(b, dict):
-                        all_records.append({
-                            "symbol": b["symbol"],
-                            "date": b["date"] if isinstance(b["date"], date) else pd.to_datetime(b["date"]).date(),
-                            "open": float(b["open"]),
-                            "high": float(b["high"]),
-                            "low": float(b["low"]),
-                            "close": float(b["close"]),
-                            "volume": float(b["volume"]),
-                            "adjusted": b.get("adjusted", adjusted),
-                            "feed": b.get("feed", norm_feed),
-                        })
+                        all_records.append(
+                            {
+                                "symbol": b["symbol"],
+                                "date": b["date"]
+                                if isinstance(b["date"], date)
+                                else pd.to_datetime(b["date"]).date(),
+                                "open": float(b["open"]),
+                                "high": float(b["high"]),
+                                "low": float(b["low"]),
+                                "close": float(b["close"]),
+                                "volume": float(b["volume"]),
+                                "adjusted": b.get("adjusted", adjusted),
+                                "feed": b.get("feed", norm_feed),
+                            }
+                        )
 
             return self._to_dataframe(all_records)
 
         except SQLAlchemyError as exc:
-            logger.warning("Database cache read failed; executing fallback direct fetch", error=str(exc))
+            logger.warning(
+                "Database cache read failed; executing fallback direct fetch", error=str(exc)
+            )
             if target_session is not None:
                 await target_session.rollback()
             if fetch_fn is not None:

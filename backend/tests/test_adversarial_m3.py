@@ -104,7 +104,7 @@ class TestRateLimiterBurstStress:
 
     def test_burst_250_concurrent_acquire_now_strict_capacity(self) -> None:
         """Adversarial stress: 250 requests fired simultaneously at t=0.
-        
+
         Strict constraint: exactly 180 must succeed, exactly 70 must be rejected.
         Available tokens must never become negative.
         """
@@ -125,7 +125,7 @@ class TestRateLimiterBurstStress:
 
     def test_multithreaded_burst_thread_safety(self) -> None:
         """Adversarial stress: 20 OS threads concurrently making 15 requests each (300 total).
-        
+
         Verifies thread-safety, absence of race conditions, and strict atomicity of counter mutations.
         """
         clock = SimulatedClock(datetime(2026, 9, 21, 10, 0, 0, tzinfo=UTC))
@@ -144,14 +144,16 @@ class TestRateLimiterBurstStress:
         total_granted = sum(1 for r in all_results if r is True)
         total_rejected = sum(1 for r in all_results if r is False)
 
-        assert total_granted == 180, f"Thread contention allowed {total_granted} grants (exceeded 180 capacity!)"
+        assert total_granted == 180, (
+            f"Thread contention allowed {total_granted} grants (exceeded 180 capacity!)"
+        )
         assert total_rejected == 120
         assert limiter.available_tokens == 0.0
 
     @pytest.mark.asyncio
     async def test_burst_250_concurrent_async_acquire_pacing_and_no_deadlock(self) -> None:
         """Adversarial stress: 250 asynchronous tasks requesting tokens concurrently.
-        
+
         Verifies:
         1. No deadlocks occur under lock contention.
         2. First 180 tasks are served immediately (wait_time == 0.0).
@@ -191,7 +193,9 @@ class TestRateLimiterBurstStress:
         assert len(delayed) == 70
         # Each delayed task waited for 1 token replenishment (1/3s = 0.333s)
         expected_sleep = pytest.approx(1.0 / 3.0, rel=1e-3, abs=0.01)
-        assert all(w == expected_sleep for w in delayed), "Each queued task must sleep for 1 token replenishment"
+        assert all(w == expected_sleep for w in delayed), (
+            "Each queued task must sleep for 1 token replenishment"
+        )
 
         # Verify cumulative completion pacing across time:
         t0 = datetime(2026, 9, 21, 10, 0, 0, tzinfo=UTC).timestamp()
@@ -200,7 +204,9 @@ class TestRateLimiterBurstStress:
         # Remaining 70 completed at strictly paced intervals: t0 + i * (1/3)
         for i, t in enumerate(completion_times[180:], start=1):
             expected_completion = pytest.approx(t0 + i * (1.0 / 3.0), rel=1e-3, abs=0.01)
-            assert t == expected_completion, f"Task {180 + i} completion mismatch: {t} vs {expected_completion}"
+            assert t == expected_completion, (
+                f"Task {180 + i} completion mismatch: {t} vs {expected_completion}"
+            )
 
     def test_smooth_token_replenishment_and_capping(self) -> None:
         """Adversarial stress: check sub-second fractional replenishment and ceiling capping."""
@@ -312,7 +318,9 @@ class TestBackoffRetrySimulation:
 
     def test_backoff_progression_deterministic(self) -> None:
         """Verify exact exponential progression capped at max_delay without jitter."""
-        policy = BackoffPolicy(initial_delay=1.0, multiplier=2.0, max_retries=5, max_delay=10.0, jitter=False)
+        policy = BackoffPolicy(
+            initial_delay=1.0, multiplier=2.0, max_retries=5, max_delay=10.0, jitter=False
+        )
 
         assert policy.compute_delay(0) == 1.0
         assert policy.compute_delay(1) == 2.0
@@ -323,7 +331,7 @@ class TestBackoffRetrySimulation:
 
     def test_jitter_distribution_and_bounds(self) -> None:
         """Adversarial stress: verify jitter is strictly within [0.5 * base, min(max_delay, base)].
-        
+
         Runs 1,000 trials to verify uniform distribution and proper variance (preventing thundering herds).
         """
         policy = BackoffPolicy(initial_delay=2.0, multiplier=2.0, max_delay=10.0, jitter=True)
@@ -331,7 +339,9 @@ class TestBackoffRetrySimulation:
         # For attempt 1: base = 4.0. Expected jitter range: [2.0, 4.0]
         samples = [policy.compute_delay(1) for _ in range(1000)]
 
-        assert all(2.0 <= s <= 4.0 for s in samples), "All samples must be within [0.5 * base, base]"
+        assert all(2.0 <= s <= 4.0 for s in samples), (
+            "All samples must be within [0.5 * base, base]"
+        )
         assert min(samples) < 2.1, "Distribution must reach lower bound"
         assert max(samples) > 3.9, "Distribution must reach upper bound"
         assert len(set(samples)) > 800, "Jitter must have high entropy (not constant)"
@@ -411,7 +421,9 @@ class TestBackoffRetrySimulation:
 
         policy = BackoffPolicy(initial_delay=0.1, max_retries=2, jitter=False)
         with pytest.raises(ProviderUnavailableError) as exc_info:
-            await execute_with_retry(failing_server, policy=policy, sleep_func=lambda _: asyncio.sleep(0))
+            await execute_with_retry(
+                failing_server, policy=policy, sleep_func=lambda _: asyncio.sleep(0)
+            )
 
         assert attempts == 3  # Initial + 2 retries
         assert exc_info.value.details["status_code"] == 503
@@ -433,14 +445,16 @@ class TestBackoffRetrySimulation:
             with pytest.raises(MarketDataError) as exc_info:
                 await execute_with_retry(client_error, policy=policy)
 
-            assert attempts == 1, f"HTTP {code} must abort on first attempt, but made {attempts} calls"
+            assert attempts == 1, (
+                f"HTTP {code} must abort on first attempt, but made {attempts} calls"
+            )
             assert not isinstance(exc_info.value, RateLimitExceededError)
             assert not isinstance(exc_info.value, ProviderUnavailableError)
 
     @pytest.mark.asyncio
     async def test_concurrent_burst_with_jitter_avoids_thundering_herd(self) -> None:
         """Simulate 30 concurrent tasks hitting a 429 and backing off with jitter.
-        
+
         Verifies that scheduled wakeups are dispersed and do not clump at identical timestamps.
         """
         all_delays: list[float] = []
@@ -472,7 +486,9 @@ class TestBackoffRetrySimulation:
         assert len(all_delays) == 30
         # Check that delays are well spread across [1.0, 2.0]
         unique_delays = len(set(round(d, 4) for d in all_delays))
-        assert unique_delays >= 25, f"Expected high delay dispersion, got only {unique_delays} unique delays"
+        assert unique_delays >= 25, (
+            f"Expected high delay dispersion, got only {unique_delays} unique delays"
+        )
 
 
 # ============================================================================
@@ -491,7 +507,9 @@ class TestSIPFeedClampingAdversarial:
     def sim_clock(self, fixed_now: datetime) -> SimulatedClock:
         return SimulatedClock(fixed_now)
 
-    def test_sip_clamping_exact_16m_boundary(self, sim_clock: SimulatedClock, fixed_now: datetime) -> None:
+    def test_sip_clamping_exact_16m_boundary(
+        self, sim_clock: SimulatedClock, fixed_now: datetime
+    ) -> None:
         """Exact 16-minute boundary: end at exactly now - 16 min is untouched."""
         provider = AlpacaProvider(clock=sim_clock)
         exact_16m = fixed_now - timedelta(minutes=16)
@@ -499,7 +517,9 @@ class TestSIPFeedClampingAdversarial:
         clamped = provider.clamp_sip_end(exact_16m)
         assert clamped == exact_16m
 
-    def test_sip_clamping_15m59s_vs_16m01s(self, sim_clock: SimulatedClock, fixed_now: datetime) -> None:
+    def test_sip_clamping_15m59s_vs_16m01s(
+        self, sim_clock: SimulatedClock, fixed_now: datetime
+    ) -> None:
         """Boundary test:
         - 15m59s ago is inside the 16m embargo window -> clamped to now - 16m.
         - 16m01s ago is outside the 16m embargo window -> untouched (now - 16m01s).
@@ -521,12 +541,14 @@ class TestSIPFeedClampingAdversarial:
     ) -> None:
         """When end is 15m59s ago and start is at 16m ago, clamped_end becomes 16m ago,
         making start >= clamped_end.
-        
+
         Strict constraint: returns empty DataFrame immediately with ZERO API calls and ZERO tokens consumed.
         """
         mock_client = MagicMock()
         limiter = AsyncTokenBucket(clock=sim_clock)
-        provider = AlpacaProvider(clock=sim_clock, historical_client=mock_client, rate_limiter=limiter)
+        provider = AlpacaProvider(
+            clock=sim_clock, historical_client=mock_client, rate_limiter=limiter
+        )
 
         start = fixed_now - timedelta(minutes=16)
         end = fixed_now - timedelta(minutes=15, seconds=59)
@@ -552,7 +574,9 @@ class TestSIPFeedClampingAdversarial:
         """
         mock_client = MagicMock()
         limiter = AsyncTokenBucket(clock=sim_clock)
-        provider = AlpacaProvider(clock=sim_clock, historical_client=mock_client, rate_limiter=limiter)
+        provider = AlpacaProvider(
+            clock=sim_clock, historical_client=mock_client, rate_limiter=limiter
+        )
 
         start = fixed_now - timedelta(minutes=10)
         end = fixed_now - timedelta(minutes=20)  # Inverted!
@@ -574,12 +598,14 @@ class TestSIPFeedClampingAdversarial:
         self, sim_clock: SimulatedClock, fixed_now: datetime
     ) -> None:
         """Boundary check: start == clamped_end (e.g. start is now - 16m, end is now - 5m).
-        
+
         Returns empty DataFrame with ZERO API calls and ZERO tokens consumed.
         """
         mock_client = MagicMock()
         limiter = AsyncTokenBucket(clock=sim_clock)
-        provider = AlpacaProvider(clock=sim_clock, historical_client=mock_client, rate_limiter=limiter)
+        provider = AlpacaProvider(
+            clock=sim_clock, historical_client=mock_client, rate_limiter=limiter
+        )
 
         start = fixed_now - timedelta(minutes=16)
         end = fixed_now - timedelta(minutes=5)
@@ -603,7 +629,9 @@ class TestSIPFeedClampingAdversarial:
         """Adversarial check: empty symbols list returns empty DataFrame with zero API calls."""
         mock_client = MagicMock()
         limiter = AsyncTokenBucket(clock=sim_clock)
-        provider = AlpacaProvider(clock=sim_clock, historical_client=mock_client, rate_limiter=limiter)
+        provider = AlpacaProvider(
+            clock=sim_clock, historical_client=mock_client, rate_limiter=limiter
+        )
 
         df = await provider.get_intraday_bars(
             symbols=[],
@@ -617,7 +645,9 @@ class TestSIPFeedClampingAdversarial:
         assert mock_client.get_stock_bars.call_count == 0
         assert limiter.available_tokens == 180.0
 
-    def test_timezone_naive_and_foreign_tz_clamping(self, sim_clock: SimulatedClock, fixed_now: datetime) -> None:
+    def test_timezone_naive_and_foreign_tz_clamping(
+        self, sim_clock: SimulatedClock, fixed_now: datetime
+    ) -> None:
         """Adversarial check: clamp_sip_end handles naive datetime and non-UTC timezones without error."""
         provider = AlpacaProvider(clock=sim_clock)
 
@@ -639,11 +669,15 @@ class TestSIPFeedClampingAdversarial:
     ) -> None:
         """Contrast check: feed='iex' does NOT clamp to now - 16m; allows querying recent data."""
         mock_client = MagicMock()
-        mock_bar = MockAlpacaBar(fixed_now - timedelta(minutes=1), 500.0, 501.0, 499.0, 500.5, 100.0)
+        mock_bar = MockAlpacaBar(
+            fixed_now - timedelta(minutes=1), 500.0, 501.0, 499.0, 500.5, 100.0
+        )
         mock_client.get_stock_bars.return_value = MockBarSet({"SPY": [mock_bar]})
 
         limiter = AsyncTokenBucket(clock=sim_clock)
-        provider = AlpacaProvider(clock=sim_clock, historical_client=mock_client, rate_limiter=limiter)
+        provider = AlpacaProvider(
+            clock=sim_clock, historical_client=mock_client, rate_limiter=limiter
+        )
 
         start = fixed_now - timedelta(minutes=2)
         end = fixed_now
@@ -690,24 +724,28 @@ class TestCrossCuttingComponentIntegrity:
         base = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
 
         # Empty DataFrame
-        df_empty = pd.DataFrame(columns=["symbol", "timestamp", "open", "high", "low", "close", "volume", "vwap"])
+        df_empty = pd.DataFrame(
+            columns=["symbol", "timestamp", "open", "high", "low", "close", "volume", "vwap"]
+        )
         res_empty = resample_1m_to_5m(df_empty)
         assert res_empty.empty
 
         # 5 bars with zero volume
-        bars_zero_vol = pd.DataFrame([
-            {
-                "symbol": "SPY",
-                "timestamp": base + timedelta(minutes=i),
-                "open": 500.0 + i,
-                "high": 501.0 + i,
-                "low": 499.0 + i,
-                "close": 500.5 + i,
-                "volume": 0.0,
-                "vwap": 500.5 + i,
-            }
-            for i in range(5)
-        ])
+        bars_zero_vol = pd.DataFrame(
+            [
+                {
+                    "symbol": "SPY",
+                    "timestamp": base + timedelta(minutes=i),
+                    "open": 500.0 + i,
+                    "high": 501.0 + i,
+                    "low": 499.0 + i,
+                    "close": 500.5 + i,
+                    "volume": 0.0,
+                    "vwap": 500.5 + i,
+                }
+                for i in range(5)
+            ]
+        )
 
         res_zero = resample_1m_to_5m(bars_zero_vol)
         assert len(res_zero) == 1
@@ -775,7 +813,9 @@ class TestCrossCuttingComponentIntegrity:
             "SPY": MagicMock(price=500.0, size=10, timestamp=clock.now())
         }
 
-        provider = AlpacaProvider(clock=clock, historical_client=mock_client, rate_limiter=shared_limiter)
+        provider = AlpacaProvider(
+            clock=clock, historical_client=mock_client, rate_limiter=shared_limiter
+        )
 
         # Call 1: succeeds (1 token consumed)
         t1 = await provider.get_latest_trade("SPY")
@@ -830,4 +870,3 @@ class TestCrossCuttingComponentIntegrity:
         assert df.empty
         assert mock_client.get_stock_bars.call_count == 0
         assert limiter.available_tokens == 180.0
-

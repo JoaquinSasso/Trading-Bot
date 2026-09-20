@@ -67,14 +67,44 @@ class TestPairwiseQuotesStalenessAndEntryPrice:
     """Pairwise 2: Real-time Quotes, Staleness Guard, and Strict Entry Price Selector."""
 
     @pytest.mark.parametrize(
-        ("spread_bps", "trade_age_secs", "has_synthetic_bar", "expected_mode", "expected_price_valid"),
+        (
+            "spread_bps",
+            "trade_age_secs",
+            "has_synthetic_bar",
+            "expected_mode",
+            "expected_price_valid",
+        ),
         [
-            (5.0, 30, False, "MIDPOINT", True),      # Narrow spread + fresh trade -> Midpoint
-            (5.0, 300, False, "MIDPOINT", True),     # Narrow spread + stale trade -> Midpoint (quote is fresh)
-            (15.0, 30, False, "LAST_TRADE", True),   # Wide spread + fresh trade -> Last trade
-            (15.0, 200, False, "STALE_PRICE", False),# Wide spread + stale trade (>180s) -> STALE_PRICE discard
-            (5.0, 30, True, "MIDPOINT", True),       # Synthetic bar present -> ignored, midpoint selected
-            (25.0, 250, True, "STALE_PRICE", False), # Wide spread + stale trade + synthetic bar -> STALE_PRICE
+            (5.0, 30, False, "MIDPOINT", True),  # Narrow spread + fresh trade -> Midpoint
+            (
+                5.0,
+                300,
+                False,
+                "MIDPOINT",
+                True,
+            ),  # Narrow spread + stale trade -> Midpoint (quote is fresh)
+            (15.0, 30, False, "LAST_TRADE", True),  # Wide spread + fresh trade -> Last trade
+            (
+                15.0,
+                200,
+                False,
+                "STALE_PRICE",
+                False,
+            ),  # Wide spread + stale trade (>180s) -> STALE_PRICE discard
+            (
+                5.0,
+                30,
+                True,
+                "MIDPOINT",
+                True,
+            ),  # Synthetic bar present -> ignored, midpoint selected
+            (
+                25.0,
+                250,
+                True,
+                "STALE_PRICE",
+                False,
+            ),  # Wide spread + stale trade + synthetic bar -> STALE_PRICE
         ],
     )
     def test_entry_price_pairwise_matrix(
@@ -94,7 +124,9 @@ class TestPairwiseQuotesStalenessAndEntryPrice:
         ask = bid + Decimal(str(round(500.0 * spread_bps / 10000, 4)))
         mid = (bid + ask) / Decimal("2")
 
-        quote = PriceQuote(symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=spread_bps, timestamp=now)
+        quote = PriceQuote(
+            symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=spread_bps, timestamp=now
+        )
         trade = TradeQuote(
             symbol="SPY",
             price=Decimal("500.02"),
@@ -157,8 +189,18 @@ class TestPairwiseMarketCalendarAndSessionTimers:
     @pytest.mark.parametrize(
         ("session_date", "is_early_close", "expected_exit_time_utc", "expected_close_window_utc"),
         [
-            (date(2026, 9, 18), False, datetime(2026, 9, 18, 19, 58, 0, tzinfo=UTC), datetime(2026, 9, 18, 19, 50, 0, tzinfo=UTC)),
-            (date(2026, 11, 27), True, datetime(2026, 11, 27, 17, 58, 0, tzinfo=UTC), datetime(2026, 11, 27, 17, 50, 0, tzinfo=UTC)),
+            (
+                date(2026, 9, 18),
+                False,
+                datetime(2026, 9, 18, 19, 58, 0, tzinfo=UTC),
+                datetime(2026, 9, 18, 19, 50, 0, tzinfo=UTC),
+            ),
+            (
+                date(2026, 11, 27),
+                True,
+                datetime(2026, 11, 27, 17, 58, 0, tzinfo=UTC),
+                datetime(2026, 11, 27, 17, 50, 0, tzinfo=UTC),
+            ),
         ],
     )
     def test_dynamic_session_timer_derivation(
@@ -191,14 +233,19 @@ class TestPairwiseMacroCalendarAndStrategyWindows:
     @pytest.mark.parametrize(
         ("event_type", "strategy_type", "time_offset_min", "expected_blocked"),
         [
-            ("FOMC", "swing", -300, True),     # FOMC day morning -> swing strategy blocked all day
-            ("FOMC", "intraday", -300, False), # FOMC day morning (9:00 ET) -> intraday allowed outside window
-            ("FOMC", "intraday", -15, True),   # 15m before FOMC -> intraday blocked
-            ("FOMC", "intraday", +15, True),   # 15m after FOMC -> intraday blocked
+            ("FOMC", "swing", -300, True),  # FOMC day morning -> swing strategy blocked all day
+            (
+                "FOMC",
+                "intraday",
+                -300,
+                False,
+            ),  # FOMC day morning (9:00 ET) -> intraday allowed outside window
+            ("FOMC", "intraday", -15, True),  # 15m before FOMC -> intraday blocked
+            ("FOMC", "intraday", +15, True),  # 15m after FOMC -> intraday blocked
             ("FOMC", "intraday", +45, False),  # 45m after FOMC -> intraday allowed
-            ("CPI", "swing", -45, False),      # 45m before CPI -> swing allowed
-            ("CPI", "swing", -10, True),       # 10m before CPI -> swing blocked
-            ("CPI", "intraday", +10, True),    # 10m after CPI -> intraday blocked
+            ("CPI", "swing", -45, False),  # 45m before CPI -> swing allowed
+            ("CPI", "swing", -10, True),  # 10m before CPI -> swing blocked
+            ("CPI", "intraday", +10, True),  # 10m after CPI -> intraday blocked
         ],
     )
     def test_macro_event_strategy_interaction(
@@ -212,9 +259,16 @@ class TestPairwiseMacroCalendarAndStrategyWindows:
         macro_filter = MockMacroFilter(clock=sim_clock)
         # Event at 14:00 ET (18:00 UTC)
         event_time = datetime(2026, 9, 16, 18, 0, 0, tzinfo=UTC)
-        macro_filter.load_events([
-            {"name": event_type, "type": event_type, "timestamp": event_time, "impact": "critical"}
-        ])
+        macro_filter.load_events(
+            [
+                {
+                    "name": event_type,
+                    "type": event_type,
+                    "timestamp": event_time,
+                    "impact": "critical",
+                }
+            ]
+        )
 
         eval_time = event_time + timedelta(minutes=time_offset_min)
         blocked, _ = macro_filter.is_macro_window_active(eval_time, strategy_type=strategy_type)
@@ -227,12 +281,17 @@ class TestPairwiseFinnhubOutageAndCacheFailClosed:
     @pytest.mark.parametrize(
         ("network_error", "cache_age_days", "days_to_earnings", "expected_blocked"),
         [
-            (False, 0, 10, False), # Online, fresh, earnings in 10d -> allowed
-            (False, 0, 2, True),   # Online, fresh, earnings in 2d -> blocked (earnings approaching)
+            (False, 0, 10, False),  # Online, fresh, earnings in 10d -> allowed
+            (False, 0, 2, True),  # Online, fresh, earnings in 2d -> blocked (earnings approaching)
             (True, 1, 10, False),  # Offline, cache 1d old, earnings in 10d -> allowed (cache valid)
-            (True, 2, 2, True),    # Offline, cache 2d old, earnings in 2d -> blocked (earnings approaching)
-            (True, 4, 10, True),   # Offline, cache 4d old (>3d) -> FAIL CLOSED BLOCKED
-            (True, 10, 5, True),   # Offline, cache 10d old -> FAIL CLOSED BLOCKED
+            (
+                True,
+                2,
+                2,
+                True,
+            ),  # Offline, cache 2d old, earnings in 2d -> blocked (earnings approaching)
+            (True, 4, 10, True),  # Offline, cache 4d old (>3d) -> FAIL CLOSED BLOCKED
+            (True, 10, 5, True),  # Offline, cache 10d old -> FAIL CLOSED BLOCKED
         ],
     )
     @pytest.mark.asyncio
@@ -266,9 +325,9 @@ class TestPairwiseProxyMapperAndExecutionRouting:
     @pytest.mark.parametrize(
         ("signal_sym", "expected_exec_sym", "nominal_price_ratio"),
         [
-            ("SPY", "SPYM", Decimal("0.14")),   # SPY ~$500 -> SPYM ~$70
-            ("QQQ", "QQQM", Decimal("0.42")),   # QQQ ~$500 -> QQQM ~$210
-            ("GLD", "GLDM", Decimal("0.18")),   # GLD ~$250 -> GLDM ~$45
+            ("SPY", "SPYM", Decimal("0.14")),  # SPY ~$500 -> SPYM ~$70
+            ("QQQ", "QQQM", Decimal("0.42")),  # QQQ ~$500 -> QQQM ~$210
+            ("GLD", "GLDM", Decimal("0.18")),  # GLD ~$250 -> GLDM ~$45
             ("AAPL", "AAPL", Decimal("1.00")),  # Unmapped 1:1
         ],
     )
@@ -296,8 +355,8 @@ class TestPairwiseCrossAnomalyAndAggregator:
         [
             (1.50, 1.00, False),  # 1.50 <= 2 * 1.00 (2.00) -> OK
             (1.99, 1.00, False),  # 1.99 <= 2.00 -> OK
-            (2.05, 1.00, True),   # 2.05 > 2.00 -> PRICE_ANOMALY
-            (3.00, 1.00, True),   # 3.00 > 2.00 -> PRICE_ANOMALY
+            (2.05, 1.00, True),  # 2.05 > 2.00 -> PRICE_ANOMALY
+            (3.00, 1.00, True),  # 3.00 > 2.00 -> PRICE_ANOMALY
             (-2.10, 1.00, True),  # Downward flash crash -> PRICE_ANOMALY
         ],
     )

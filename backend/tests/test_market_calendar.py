@@ -25,16 +25,16 @@ from tbot.data.types import ET_ZONE
 def mock_holidays_2026() -> set[date]:
     """Conjunto representativo de feriados oficiales bursátiles para 2026."""
     return {
-        date(2026, 1, 1),   # New Year's Day
+        date(2026, 1, 1),  # New Year's Day
         date(2026, 1, 19),  # Martin Luther King Jr. Day
         date(2026, 2, 16),  # Presidents' Day
-        date(2026, 4, 3),   # Good Friday
+        date(2026, 4, 3),  # Good Friday
         date(2026, 5, 25),  # Memorial Day
         date(2026, 6, 19),  # Juneteenth
-        date(2026, 7, 3),   # Independence Day (observado)
-        date(2026, 9, 7),   # Labor Day
-        date(2026, 11, 26), # Thanksgiving
-        date(2026, 12, 25), # Christmas Day
+        date(2026, 7, 3),  # Independence Day (observado)
+        date(2026, 9, 7),  # Labor Day
+        date(2026, 11, 26),  # Thanksgiving
+        date(2026, 12, 25),  # Christmas Day
     }
 
 
@@ -137,7 +137,9 @@ class TestStandardTradingDays:
         assert not day.is_early_close
         assert day.duration_minutes == 390.0
 
-    def test_is_market_open_progression_standard_day(self, populated_calendar: MarketCalendar) -> None:
+    def test_is_market_open_progression_standard_day(
+        self, populated_calendar: MarketCalendar
+    ) -> None:
         """Verifica los límites exactos de apertura y cierre para un día estándar."""
         # 09:29:59 ET -> Cerrado
         pre_open = datetime(2026, 9, 21, 9, 29, 59, tzinfo=ET_ZONE)
@@ -281,19 +283,13 @@ class TestDynamicWindows:
         )
 
         # 09:30:00 ET -> Dentro
-        assert populated_calendar.is_open_window(
-            datetime(2026, 9, 21, 9, 30, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_open_window(datetime(2026, 9, 21, 9, 30, 0, tzinfo=ET_ZONE))
 
         # 09:45:00 ET -> Dentro
-        assert populated_calendar.is_open_window(
-            datetime(2026, 9, 21, 9, 45, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_open_window(datetime(2026, 9, 21, 9, 45, 0, tzinfo=ET_ZONE))
 
         # 09:59:59 ET -> Dentro
-        assert populated_calendar.is_open_window(
-            datetime(2026, 9, 21, 9, 59, 59, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_open_window(datetime(2026, 9, 21, 9, 59, 59, tzinfo=ET_ZONE))
 
         # 10:00:00 ET -> Fuera (expiró la primera media hora)
         assert not populated_calendar.is_open_window(
@@ -308,19 +304,13 @@ class TestDynamicWindows:
         )
 
         # 15:50:00 ET -> Dentro
-        assert populated_calendar.is_close_window(
-            datetime(2026, 9, 21, 15, 50, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_close_window(datetime(2026, 9, 21, 15, 50, 0, tzinfo=ET_ZONE))
 
         # 15:55:00 ET -> Dentro
-        assert populated_calendar.is_close_window(
-            datetime(2026, 9, 21, 15, 55, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_close_window(datetime(2026, 9, 21, 15, 55, 0, tzinfo=ET_ZONE))
 
         # 16:00:00 ET -> Dentro (campana de cierre)
-        assert populated_calendar.is_close_window(
-            datetime(2026, 9, 21, 16, 0, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_close_window(datetime(2026, 9, 21, 16, 0, 0, tzinfo=ET_ZONE))
 
         # 16:00:01 ET -> Fuera
         assert not populated_calendar.is_close_window(
@@ -335,19 +325,13 @@ class TestDynamicWindows:
         )
 
         # 12:50:00 ET -> Dentro
-        assert populated_calendar.is_close_window(
-            datetime(2026, 11, 27, 12, 50, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_close_window(datetime(2026, 11, 27, 12, 50, 0, tzinfo=ET_ZONE))
 
         # 12:55:00 ET -> Dentro
-        assert populated_calendar.is_close_window(
-            datetime(2026, 11, 27, 12, 55, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_close_window(datetime(2026, 11, 27, 12, 55, 0, tzinfo=ET_ZONE))
 
         # 13:00:00 ET -> Dentro
-        assert populated_calendar.is_close_window(
-            datetime(2026, 11, 27, 13, 0, 0, tzinfo=ET_ZONE)
-        )
+        assert populated_calendar.is_close_window(datetime(2026, 11, 27, 13, 0, 0, tzinfo=ET_ZONE))
 
         # 13:00:01 ET -> Fuera
         assert not populated_calendar.is_close_window(
@@ -466,9 +450,7 @@ class TestCalendarCachingAndAlpacaSync:
 class TestSimulatedClockAdvancement:
     """Valida la reactividad inmediata del calendario ante avances de SimulatedClock."""
 
-    def test_progression_through_trading_session(
-        self, populated_calendar: MarketCalendar
-    ) -> None:
+    def test_progression_through_trading_session(self, populated_calendar: MarketCalendar) -> None:
         """Avanzar el reloj simulado debe reflejarse en tiempo real en los estados del calendario."""
         sim_clock = populated_calendar.clock
         assert isinstance(sim_clock, SimulatedClock)

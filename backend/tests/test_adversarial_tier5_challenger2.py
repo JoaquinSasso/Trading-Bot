@@ -272,7 +272,9 @@ class TestDailyBarCacheAdversarial:
 
         # Weekend gap (Fri Sep 4 to Mon Sep 7: 3 days gap <= 4 max_gap)
         dates_weekend = [date(2026, 9, 4), date(2026, 9, 7)]
-        assert find_missing_date_ranges(dates_weekend, max_gap_days=4) == [(date(2026, 9, 4), date(2026, 9, 7))]
+        assert find_missing_date_ranges(dates_weekend, max_gap_days=4) == [
+            (date(2026, 9, 4), date(2026, 9, 7))
+        ]
 
         # Wide gap (Sep 1 and Sep 15: 14 days gap > 4)
         dates_wide = [date(2026, 9, 1), date(2026, 9, 15)]
@@ -288,18 +290,22 @@ class TestDailyBarCacheAdversarial:
         mock_session = AsyncMock()
         mock_session.scalars.side_effect = OperationalError("SELECT 1", {}, Exception("DB down"))
 
-        async def mock_fetch(syms: list[str], s: date, e: date, feed: str, adj: bool) -> list[dict[str, Any]]:
-            return [{
-                "symbol": syms[0],
-                "date": s,
-                "open": 100.0,
-                "high": 105.0,
-                "low": 99.0,
-                "close": 104.0,
-                "volume": 1000.0,
-                "adjusted": adj,
-                "feed": feed,
-            }]
+        async def mock_fetch(
+            syms: list[str], s: date, e: date, feed: str, adj: bool
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": syms[0],
+                    "date": s,
+                    "open": 100.0,
+                    "high": 105.0,
+                    "low": 99.0,
+                    "close": 104.0,
+                    "volume": 1000.0,
+                    "adjusted": adj,
+                    "feed": feed,
+                }
+            ]
 
         df = await cache.get_or_fetch_daily_bars(
             symbols=["SPY"],
@@ -582,7 +588,9 @@ class TestStalenessGuardAdversarial:
             timestamp=now + timedelta(seconds=2),
         )
         # With stale trade too
-        stale_trade = TradeQuote(symbol="SPY", price=Decimal("100.02"), timestamp=now - timedelta(seconds=500))
+        stale_trade = TradeQuote(
+            symbol="SPY", price=Decimal("100.02"), timestamp=now - timedelta(seconds=500)
+        )
         price_rej, mode_rej = guard.get_entry_price(future_quote, stale_trade)
         assert mode_rej == EntryPriceMode("STALE_PRICE")
         assert price_rej is None
@@ -707,11 +715,51 @@ class TestMultiModuleIntegratedAdversarial:
         """Resampler correctly sorts out-of-order 1m bars before aggregating."""
         base_time = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
         bars = [
-            {"timestamp": base_time + timedelta(minutes=3), "symbol": "SPY", "open": 103.0, "high": 104.0, "low": 102.5, "close": 103.5, "volume": 100.0},
-            {"timestamp": base_time + timedelta(minutes=0), "symbol": "SPY", "open": 100.0, "high": 101.0, "low": 99.5, "close": 100.5, "volume": 100.0},
-            {"timestamp": base_time + timedelta(minutes=4), "symbol": "SPY", "open": 104.0, "high": 105.0, "low": 103.5, "close": 104.5, "volume": 100.0},
-            {"timestamp": base_time + timedelta(minutes=1), "symbol": "SPY", "open": 101.0, "high": 102.0, "low": 100.5, "close": 101.5, "volume": 100.0},
-            {"timestamp": base_time + timedelta(minutes=2), "symbol": "SPY", "open": 102.0, "high": 103.0, "low": 101.5, "close": 102.5, "volume": 100.0},
+            {
+                "timestamp": base_time + timedelta(minutes=3),
+                "symbol": "SPY",
+                "open": 103.0,
+                "high": 104.0,
+                "low": 102.5,
+                "close": 103.5,
+                "volume": 100.0,
+            },
+            {
+                "timestamp": base_time + timedelta(minutes=0),
+                "symbol": "SPY",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.5,
+                "close": 100.5,
+                "volume": 100.0,
+            },
+            {
+                "timestamp": base_time + timedelta(minutes=4),
+                "symbol": "SPY",
+                "open": 104.0,
+                "high": 105.0,
+                "low": 103.5,
+                "close": 104.5,
+                "volume": 100.0,
+            },
+            {
+                "timestamp": base_time + timedelta(minutes=1),
+                "symbol": "SPY",
+                "open": 101.0,
+                "high": 102.0,
+                "low": 100.5,
+                "close": 101.5,
+                "volume": 100.0,
+            },
+            {
+                "timestamp": base_time + timedelta(minutes=2),
+                "symbol": "SPY",
+                "open": 102.0,
+                "high": 103.0,
+                "low": 101.5,
+                "close": 102.5,
+                "volume": 100.0,
+            },
         ]
         df_1m = pd.DataFrame(bars)
         df_5m = resample_1m_to_5m(df_1m)
@@ -734,8 +782,28 @@ class TestMultiModuleIntegratedAdversarial:
         bars = []
         for i in range(5):
             t = base_time + timedelta(minutes=i)
-            bars.append({"timestamp": t, "symbol": "SPY", "open": 100.0 + i, "high": 101.0 + i, "low": 99.0 + i, "close": 100.5 + i, "volume": 100.0})
-            bars.append({"timestamp": t, "symbol": "QQQ", "open": 200.0 + i, "high": 201.0 + i, "low": 199.0 + i, "close": 200.5 + i, "volume": 200.0})
+            bars.append(
+                {
+                    "timestamp": t,
+                    "symbol": "SPY",
+                    "open": 100.0 + i,
+                    "high": 101.0 + i,
+                    "low": 99.0 + i,
+                    "close": 100.5 + i,
+                    "volume": 100.0,
+                }
+            )
+            bars.append(
+                {
+                    "timestamp": t,
+                    "symbol": "QQQ",
+                    "open": 200.0 + i,
+                    "high": 201.0 + i,
+                    "low": 199.0 + i,
+                    "close": 200.5 + i,
+                    "volume": 200.0,
+                }
+            )
 
         df_1m = pd.DataFrame(bars)
         df_5m = resample_1m_to_5m(df_1m)
@@ -787,7 +855,9 @@ class TestMultiModuleIntegratedAdversarial:
 
         start = base_t
         end = base_t + timedelta(minutes=5)
-        df = await provider.get_intraday_bars(["SPY"], timeframe="5m", start=start, end=end, feed="iex")
+        df = await provider.get_intraday_bars(
+            ["SPY"], timeframe="5m", start=start, end=end, feed="iex"
+        )
 
         assert len(df) == 1
         assert df.iloc[0]["symbol"] == "SPY"

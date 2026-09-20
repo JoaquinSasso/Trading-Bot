@@ -30,14 +30,14 @@ from tbot.data.types import ET_ZONE, MarketClock, TradingDay
 def holidays_2026() -> set[date]:
     """Official US equity market holidays for 2026."""
     return {
-        date(2026, 1, 1),    # New Year's Day (Thursday)
-        date(2026, 1, 19),   # Martin Luther King Jr. Day (Monday)
-        date(2026, 2, 16),   # Presidents' Day (Monday)
-        date(2026, 4, 3),    # Good Friday (Friday)
-        date(2026, 5, 25),   # Memorial Day (Monday)
-        date(2026, 6, 19),   # Juneteenth (Friday)
-        date(2026, 7, 3),    # Independence Day observed (Friday)
-        date(2026, 9, 7),    # Labor Day (Monday)
+        date(2026, 1, 1),  # New Year's Day (Thursday)
+        date(2026, 1, 19),  # Martin Luther King Jr. Day (Monday)
+        date(2026, 2, 16),  # Presidents' Day (Monday)
+        date(2026, 4, 3),  # Good Friday (Friday)
+        date(2026, 5, 25),  # Memorial Day (Monday)
+        date(2026, 6, 19),  # Juneteenth (Friday)
+        date(2026, 7, 3),  # Independence Day observed (Friday)
+        date(2026, 9, 7),  # Labor Day (Monday)
         date(2026, 11, 26),  # Thanksgiving Day (Thursday)
         date(2026, 12, 25),  # Christmas Day (Friday)
     }
@@ -421,13 +421,15 @@ class TestCalendarDateMathAdversarial:
         """add_trading_days with n=0 returns identical date."""
         assert calendar_2026.add_trading_days(date(2026, 9, 21), 0) == date(2026, 9, 21)
         assert calendar_2026.add_trading_days(date(2026, 9, 19), 0) == date(2026, 9, 19)  # Saturday
-        assert calendar_2026.add_trading_days(date(2026, 4, 3), 0) == date(2026, 4, 3)    # Good Friday
+        assert calendar_2026.add_trading_days(date(2026, 4, 3), 0) == date(
+            2026, 4, 3
+        )  # Good Friday
 
     def test_add_trading_days_positive_and_negative(self, calendar_2026: MarketCalendar) -> None:
         """Positive and negative n roundtrips across regular weeks."""
         start = date(2026, 9, 21)  # Monday
-        assert calendar_2026.add_trading_days(start, 4) == date(2026, 9, 25)   # Friday
-        assert calendar_2026.add_trading_days(start, 5) == date(2026, 9, 28)   # Next Monday
+        assert calendar_2026.add_trading_days(start, 4) == date(2026, 9, 25)  # Friday
+        assert calendar_2026.add_trading_days(start, 5) == date(2026, 9, 28)  # Next Monday
         assert calendar_2026.add_trading_days(date(2026, 9, 28), -5) == start
 
     def test_add_trading_days_starting_on_weekend(self, calendar_2026: MarketCalendar) -> None:
@@ -450,8 +452,8 @@ class TestCalendarDateMathAdversarial:
         """Test arithmetic across Good Friday, MLK Day, Thanksgiving, and Christmas."""
         # Good Friday: Apr 3 (Fri)
         thu_before_gf = date(2026, 4, 2)
-        assert calendar_2026.add_trading_days(thu_before_gf, 1) == date(2026, 4, 6)   # Monday
-        assert calendar_2026.add_trading_days(thu_before_gf, 2) == date(2026, 4, 7)   # Tuesday
+        assert calendar_2026.add_trading_days(thu_before_gf, 1) == date(2026, 4, 6)  # Monday
+        assert calendar_2026.add_trading_days(thu_before_gf, 2) == date(2026, 4, 7)  # Tuesday
         assert calendar_2026.add_trading_days(date(2026, 4, 6), -1) == thu_before_gf
 
         # MLK Day: Jan 19 (Mon)
@@ -461,7 +463,9 @@ class TestCalendarDateMathAdversarial:
 
         # Thanksgiving: Nov 26 (Thu) is holiday, Nov 27 (Fri) is early close trading day
         wed_before_tg = date(2026, 11, 25)
-        assert calendar_2026.add_trading_days(wed_before_tg, 1) == date(2026, 11, 27)  # Black Friday
+        assert calendar_2026.add_trading_days(wed_before_tg, 1) == date(
+            2026, 11, 27
+        )  # Black Friday
         assert calendar_2026.add_trading_days(wed_before_tg, 2) == date(2026, 11, 30)  # Next Monday
         assert calendar_2026.add_trading_days(date(2026, 11, 30), -1) == date(2026, 11, 27)
         assert calendar_2026.add_trading_days(date(2026, 11, 30), -2) == wed_before_tg
@@ -646,9 +650,7 @@ class TestDataclassImmutabilityAndProperties:
 class TestGranularSweepAndEdgeCases:
     """Second-by-second continuous sweep and leap-year calendar resilience."""
 
-    def test_continuous_second_by_second_open_sweep(
-        self, calendar_2026: MarketCalendar
-    ) -> None:
+    def test_continuous_second_by_second_open_sweep(self, calendar_2026: MarketCalendar) -> None:
         """Continuous sweep around market open: 09:29:55 to 09:30:05 ET."""
         for sec in range(55, 60):
             ts = datetime(2026, 9, 21, 9, 29, sec, tzinfo=ET_ZONE)
@@ -664,9 +666,7 @@ class TestGranularSweepAndEdgeCases:
             assert not calendar_2026.is_regular_trading_window(ts)
             assert pytest.approx(calendar_2026.minutes_since_open(ts), abs=1e-5) == sec / 60.0
 
-    def test_continuous_second_by_second_close_sweep(
-        self, calendar_2026: MarketCalendar
-    ) -> None:
+    def test_continuous_second_by_second_close_sweep(self, calendar_2026: MarketCalendar) -> None:
         """Continuous sweep around market close: 15:59:55 to 16:00:05 ET."""
         for sec in range(55, 60):
             ts = datetime(2026, 9, 21, 15, 59, sec, tzinfo=ET_ZONE)
@@ -696,7 +696,9 @@ class TestGranularSweepAndEdgeCases:
             start=date(2024, 2, 1),
             end=date(2024, 3, 1),
         )
-        cal = MarketCalendar(clock=clock, initial_days=days, covered_range=(date(2024, 2, 1), date(2024, 3, 1)))
+        cal = MarketCalendar(
+            clock=clock, initial_days=days, covered_range=(date(2024, 2, 1), date(2024, 3, 1))
+        )
 
         feb_29 = date(2024, 2, 29)
         assert cal.is_trading_day(feb_29)
@@ -716,8 +718,12 @@ class TestGranularSweepAndEdgeCases:
         clock1 = SimulatedClock(datetime(2026, 9, 21, 13, 30, tzinfo=UTC))
         clock2 = SimulatedClock(datetime(2026, 12, 1, 14, 30, tzinfo=UTC))
 
-        cal1 = MarketCalendar(clock=clock1, initial_days=[], covered_range=(date(2026, 9, 1), date(2026, 9, 30)))
-        cal2 = MarketCalendar(clock=clock2, initial_days=[], covered_range=(date(2026, 12, 1), date(2026, 12, 31)))
+        cal1 = MarketCalendar(
+            clock=clock1, initial_days=[], covered_range=(date(2026, 9, 1), date(2026, 9, 30))
+        )
+        cal2 = MarketCalendar(
+            clock=clock2, initial_days=[], covered_range=(date(2026, 12, 1), date(2026, 12, 31))
+        )
 
         # cal1 covers Sep, not Dec
         assert cal1.is_trading_day(date(2026, 9, 21)) is False  # empty days in range

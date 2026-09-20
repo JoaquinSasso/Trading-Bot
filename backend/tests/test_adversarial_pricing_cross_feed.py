@@ -320,7 +320,6 @@ class TestHighPrecisionAndTypeSafety:
         assert ok is True
         assert reason == "OK"
 
-
     def test_mixed_numeric_types_interoperability(self) -> None:
         """Verifica que ints, floats estándar y Decimals interoperen sin excepciones."""
         detector = AnomalyDetector()
@@ -407,7 +406,6 @@ class TestHighPrecisionAndTypeSafety:
         assert reason in ("PRICE_ANOMALY", "MISSING_ATR")
 
 
-
 # ============================================================================
 # 4. FORWARD-FILL INVARIANT ENFORCEMENT & TYPE ROBUSTNESS
 # ============================================================================
@@ -469,7 +467,6 @@ class TestForwardFillInvariantEnforcement:
                 sip_close=Decimal("150.00"),
                 atr_5m=Decimal("1.00"),
             )
-
 
     def test_forward_fill_cannot_bypass_when_passed_as_objects(
         self, sim_clock: SimulatedClock
@@ -584,4 +581,3 @@ class TestDiscardMetricsTrackingAndThreadSafety:
             assert actual_stale == expected_stale
         finally:
             sys.setswitchinterval(old_switch)
-

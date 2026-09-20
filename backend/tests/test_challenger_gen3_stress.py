@@ -559,9 +559,7 @@ class TestAuxiliaryEdgeCases:
         assert _normalize_ts("2026-09-21") is None
         assert _normalize_ts(123456789) is None
 
-    def test_out_of_order_stream_does_not_regress_monitors(
-        self, sim_clock: SimulatedClock
-    ) -> None:
+    def test_out_of_order_stream_does_not_regress_monitors(self, sim_clock: SimulatedClock) -> None:
         """Delayed out-of-order packets must not regress last_message_time or last_quote_time."""
         guard = StalenessGuard(clock=sim_clock, enforce_market_hours=False)
         t_base = sim_clock.now()
@@ -704,7 +702,9 @@ class TestDefect2ValidateEntryTimezonesEmpirical:
         # Scenario A: Quote naive, Trade aware
         q_naive = PriceQuote("SPY", Decimal("500.00"), Decimal("500.02"), timestamp=base_naive)
         t_aware = TradeQuote("SPY", Decimal("500.01"), 100, timestamp=base_utc)
-        price, ok, reason = guard.validate_entry("SPY", q_naive, t_aware, Decimal("500.00"), Decimal("1.00"))
+        price, ok, reason = guard.validate_entry(
+            "SPY", q_naive, t_aware, Decimal("500.00"), Decimal("1.00")
+        )
         assert ok is True
         assert reason == "OK"
         assert price == Decimal("500.01")
@@ -712,13 +712,17 @@ class TestDefect2ValidateEntryTimezonesEmpirical:
         # Scenario B: Quote aware, Trade naive
         q_aware = PriceQuote("SPY", Decimal("500.00"), Decimal("500.02"), timestamp=base_utc)
         t_naive = TradeQuote("SPY", Decimal("500.01"), 100, timestamp=base_naive)
-        price, ok, reason = guard.validate_entry("SPY", q_aware, t_naive, Decimal("500.00"), Decimal("1.00"))
+        price, ok, reason = guard.validate_entry(
+            "SPY", q_aware, t_naive, Decimal("500.00"), Decimal("1.00")
+        )
         assert ok is True
         assert reason == "OK"
         assert price == Decimal("500.01")
 
         # Scenario C: Both naive
-        price, ok, reason = guard.validate_entry("SPY", q_naive, t_naive, Decimal("500.00"), Decimal("1.00"))
+        price, ok, reason = guard.validate_entry(
+            "SPY", q_naive, t_naive, Decimal("500.00"), Decimal("1.00")
+        )
         assert ok is True
         assert reason == "OK"
         assert price == Decimal("500.01")
@@ -739,7 +743,9 @@ class TestDefect2ValidateEntryTimezonesEmpirical:
         q_edt = PriceQuote("SPY", Decimal("500.00"), Decimal("500.02"), timestamp=dt_edt)
         t_tokyo = TradeQuote("SPY", Decimal("500.01"), 100, timestamp=dt_tokyo)
 
-        price, ok, reason = guard.validate_entry("SPY", q_edt, t_tokyo, Decimal("500.00"), Decimal("1.00"))
+        price, ok, reason = guard.validate_entry(
+            "SPY", q_edt, t_tokyo, Decimal("500.00"), Decimal("1.00")
+        )
         assert ok is True
         assert reason == "OK"
         assert price == Decimal("500.01")
@@ -751,10 +757,14 @@ class TestDefect2ValidateEntryTimezonesEmpirical:
         guard = StalenessGuard(clock=clock, enforce_market_hours=False)
         guard.record_message(base_utc)
 
-        q_naive = PriceQuote("SPY", Decimal("500.00"), Decimal("500.02"), timestamp=datetime(2026, 9, 21, 14, 30, 0))
+        q_naive = PriceQuote(
+            "SPY", Decimal("500.00"), Decimal("500.02"), timestamp=datetime(2026, 9, 21, 14, 30, 0)
+        )
         t_aware = TradeQuote("SPY", Decimal("500.01"), 100, timestamp=base_utc)
 
-        price = guard.validate_entry_or_raise("SPY", q_naive, t_aware, Decimal("500.00"), Decimal("1.00"))
+        price = guard.validate_entry_or_raise(
+            "SPY", q_naive, t_aware, Decimal("500.00"), Decimal("1.00")
+        )
         assert isinstance(price, Decimal)
         assert price == Decimal("500.01")
 
@@ -801,8 +811,15 @@ class TestDefect3MonotonicityAndOutOfOrderEmpirical:
 
         # Fresh quote and trade at t0 + 100s
         clock.set_time(t0 + timedelta(seconds=100))
-        guard.record_quote("SPY", PriceQuote("SPY", Decimal("500"), Decimal("500.02"), timestamp=t0 + timedelta(seconds=100)))
-        guard.record_trade("SPY", TradeQuote("SPY", Decimal("500.01"), 100, timestamp=t0 + timedelta(seconds=100)))
+        guard.record_quote(
+            "SPY",
+            PriceQuote(
+                "SPY", Decimal("500"), Decimal("500.02"), timestamp=t0 + timedelta(seconds=100)
+            ),
+        )
+        guard.record_trade(
+            "SPY", TradeQuote("SPY", Decimal("500.01"), 100, timestamp=t0 + timedelta(seconds=100))
+        )
 
         state = guard.symbol_monitor._symbols["SPY"]
         assert state.last_quote_time == t0 + timedelta(seconds=100)
@@ -810,7 +827,9 @@ class TestDefect3MonotonicityAndOutOfOrderEmpirical:
         assert state.last_quote.bid == Decimal("500")
 
         # Stale quotes/trades from t0 arrive out of order
-        guard.record_quote("SPY", PriceQuote("SPY", Decimal("100"), Decimal("100.02"), timestamp=t0))
+        guard.record_quote(
+            "SPY", PriceQuote("SPY", Decimal("100"), Decimal("100.02"), timestamp=t0)
+        )
         guard.record_trade("SPY", TradeQuote("SPY", Decimal("100.01"), 10, timestamp=t0))
 
         # Must NOT regress
@@ -828,6 +847,7 @@ class TestDefect3MonotonicityAndOutOfOrderEmpirical:
     def test_random_packet_bombardment_strict_monotonicity(self) -> None:
         """500 shuffled messages must never cause cursor regression."""
         import random
+
         t0 = datetime(2026, 9, 21, 14, 0, 0, tzinfo=UTC)
         clock = SimulatedClock(t0)
         guard = StalenessGuard(clock=clock, enforce_market_hours=False)
@@ -844,7 +864,9 @@ class TestDefect3MonotonicityAndOutOfOrderEmpirical:
             current_cursor = guard.global_monitor.last_message_time
             assert current_cursor is not None
             if prev_cursor is not None:
-                assert current_cursor >= prev_cursor, f"Monotonicity violation: {current_cursor} < {prev_cursor}"
+                assert current_cursor >= prev_cursor, (
+                    f"Monotonicity violation: {current_cursor} < {prev_cursor}"
+                )
             prev_cursor = current_cursor
 
         assert guard.global_monitor.last_message_time == t0 + timedelta(seconds=499)
@@ -898,7 +920,9 @@ class TestDefect4FutureTimestampsMaskingEmpirical:
         guard.set_symbol_tau("AAPL", 180.0)
 
         # Future quote arrives
-        q_future = PriceQuote("AAPL", Decimal("150"), Decimal("150.02"), timestamp=t0 + timedelta(hours=2))
+        q_future = PriceQuote(
+            "AAPL", Decimal("150"), Decimal("150.02"), timestamp=t0 + timedelta(hours=2)
+        )
         guard.record_quote("AAPL", q_future)
 
         # Clamped to t0
@@ -928,4 +952,3 @@ class TestDefect4FutureTimestampsMaskingEmpirical:
 
         # 60s in future -> False
         assert guard.check_global_feed(t0 + timedelta(seconds=60)) is False
-

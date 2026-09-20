@@ -82,15 +82,17 @@ def generate_synthetic_spy_bars(
         raise ValueError(f"Unknown regime_type: {regime_type}")
 
     dates = [start_date + timedelta(days=i) for i in range(len(prices))]
-    return pd.DataFrame({
-        "symbol": "SPY",
-        "date": dates,
-        "close": prices,
-        "open": prices,
-        "high": [p * 1.01 for p in prices],
-        "low": [p * 0.99 for p in prices],
-        "volume": 1000000,
-    })
+    return pd.DataFrame(
+        {
+            "symbol": "SPY",
+            "date": dates,
+            "close": prices,
+            "open": prices,
+            "high": [p * 1.01 for p in prices],
+            "low": [p * 0.99 for p in prices],
+            "volume": 1000000,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -206,11 +208,13 @@ class TestRegimeFilterFailClosed:
     def test_missing_close_column(self, sim_clock: SimulatedClock) -> None:
         """Falta de columna de cierre retorna UNKNOWN."""
         rf = RegimeFilter(clock=sim_clock)
-        df = pd.DataFrame({
-            "date": [date(2026, 1, 1) + timedelta(days=i) for i in range(250)],
-            "open": [500.0] * 250,
-            "volume": [1000] * 250,
-        })
+        df = pd.DataFrame(
+            {
+                "date": [date(2026, 1, 1) + timedelta(days=i) for i in range(250)],
+                "open": [500.0] * 250,
+                "volume": [1000] * 250,
+            }
+        )
 
         snapshot = rf.classify(df)
 
@@ -221,10 +225,12 @@ class TestRegimeFilterFailClosed:
     def test_all_nan_prices(self, sim_clock: SimulatedClock) -> None:
         """Precios NaN no permiten cómputo de indicadores -> UNKNOWN."""
         rf = RegimeFilter(clock=sim_clock)
-        df = pd.DataFrame({
-            "date": [date(2026, 1, 1) + timedelta(days=i) for i in range(250)],
-            "close": [np.nan] * 250,
-        })
+        df = pd.DataFrame(
+            {
+                "date": [date(2026, 1, 1) + timedelta(days=i) for i in range(250)],
+                "close": [np.nan] * 250,
+            }
+        )
 
         snapshot = rf.classify(df)
 
@@ -282,7 +288,9 @@ class TestRegimeFilterClockPolicy:
         assert snapshot.ts == fixed_dt
         assert snapshot.timestamp == fixed_dt
 
-    def test_snapshot_advances_deterministically_with_clock(self, sim_clock: SimulatedClock) -> None:
+    def test_snapshot_advances_deterministically_with_clock(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """Al avanzar el reloj, las clasificaciones subsecuentes toman el nuevo timestamp."""
         rf = RegimeFilter(clock=sim_clock)
         df = generate_synthetic_spy_bars(n_bars=250, regime_type="BULL_CALM")
@@ -437,7 +445,9 @@ class TestRegimeSnapshotPersistence:
         mock_session.rollback.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_latest_snapshot(self, test_session: AsyncSession, sim_clock: SimulatedClock) -> None:
+    async def test_get_latest_snapshot(
+        self, test_session: AsyncSession, sim_clock: SimulatedClock
+    ) -> None:
         """Verifica la consulta del snapshot más reciente."""
         rf = RegimeFilter(clock=sim_clock)
 

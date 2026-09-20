@@ -26,3 +26,6 @@ lint:
 
 format:
 	ruff format backend/
+
+backtest:
+	python -m tbot.backtest.runner --strategy $(or $(STRATEGY),s1) --start $(or $(START),2025-01-01) --end $(or $(END),2025-12-31)

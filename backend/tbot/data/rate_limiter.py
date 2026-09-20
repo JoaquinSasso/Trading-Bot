@@ -136,7 +136,9 @@ class AsyncTokenBucket:
                 deficit = token_count - self._tokens
                 wait_seconds = deficit / self._rate
 
-                if not blocking or (max_wait_seconds is not None and wait_seconds > max_wait_seconds):
+                if not blocking or (
+                    max_wait_seconds is not None and wait_seconds > max_wait_seconds
+                ):
                     raise RateLimitExceededError(
                         f"Rate limit exceeded ({self._rate_limit:.0f} req/min budget). "
                         f"Wait time required: {wait_seconds:.2f}s",
@@ -147,7 +149,9 @@ class AsyncTokenBucket:
             await self._sleep_func(wait_seconds)
 
             with self._thread_lock:
-                now_after = current_time.timestamp() if current_time is not None else self._time_func()
+                now_after = (
+                    current_time.timestamp() if current_time is not None else self._time_func()
+                )
                 self._replenish(now_after)
                 self._tokens = max(0.0, self._tokens - token_count)
                 self._record_timestamp(current_time)
@@ -200,7 +204,7 @@ class BackoffPolicy:
         random_func: Callable[[float, float], float] = random.uniform,
     ) -> float:
         """Calcula el retardo en segundos para un reintento (0-indexed)."""
-        base = min(self.max_delay, self.initial_delay * (self.multiplier ** attempt))
+        base = min(self.max_delay, self.initial_delay * (self.multiplier**attempt))
         delay = random_func(0.5 * base, base) if self.jitter else base
 
         if retry_after is not None and retry_after > 0:
@@ -233,7 +237,12 @@ class BackoffPolicy:
 
         msg = str(exc)
         for c in (400, 401, 403, 404, 429, 500, 502, 503, 504):
-            if f"HTTP {c}" in msg or f" {c} " in msg or f"status={c}" in msg.lower() or f"status_code={c}" in msg.lower():
+            if (
+                f"HTTP {c}" in msg
+                or f" {c} " in msg
+                or f"status={c}" in msg.lower()
+                or f"status_code={c}" in msg.lower()
+            ):
                 return c
 
         return None
@@ -273,11 +282,17 @@ class BackoffPolicy:
         msg = str(exc).lower()
         if "429" in msg or "rate limit" in msg or "too many requests" in msg:
             return True
-        return any(code in msg for code in ("500", "502", "503", "504", "gateway", "service unavailable"))
+        return any(
+            code in msg for code in ("500", "502", "503", "504", "gateway", "service unavailable")
+        )
 
     def wrap_error(self, exc: BaseException, attempts: int = 1) -> MarketDataError:
         status = self.extract_status_code(exc)
-        if status == 429 or isinstance(exc, RateLimitExceededError) or "rate limit" in str(exc).lower():
+        if (
+            status == 429
+            or isinstance(exc, RateLimitExceededError)
+            or "rate limit" in str(exc).lower()
+        ):
             retry_after = self.extract_retry_after(exc)
             return RateLimitExceededError(
                 f"Rate limit exceeded (HTTP 429): {exc}",
@@ -287,7 +302,19 @@ class BackoffPolicy:
         if (
             status in (500, 502, 503, 504)
             or isinstance(exc, ProviderUnavailableError)
-            or any(term in str(exc).lower() for term in ("500", "502", "503", "504", "service unavailable", "gateway timeout", "bad gateway", "internal server error"))
+            or any(
+                term in str(exc).lower()
+                for term in (
+                    "500",
+                    "502",
+                    "503",
+                    "504",
+                    "service unavailable",
+                    "gateway timeout",
+                    "bad gateway",
+                    "internal server error",
+                )
+            )
         ):
             return ProviderUnavailableError(
                 f"Market data provider unavailable (HTTP {status}): {exc}",

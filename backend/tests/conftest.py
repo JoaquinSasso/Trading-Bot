@@ -56,6 +56,7 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture
 async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Cliente HTTP asíncrono para probar los endpoints de FastAPI."""
+
     async def override_get_db():
         yield test_session
 

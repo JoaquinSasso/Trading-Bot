@@ -258,9 +258,7 @@ class MarketCalendar:
         """Indica si el instante está dentro de la rueda regular, fuera de las ventanas de apertura y cierre."""
         ts = self._normalize_timestamp(timestamp)
         return (
-            self.is_market_open(ts)
-            and not self.is_open_window(ts)
-            and not self.is_close_window(ts)
+            self.is_market_open(ts) and not self.is_open_window(ts) and not self.is_close_window(ts)
         )
 
     def minutes_until_close(self, timestamp: datetime | None = None) -> float | None:
@@ -426,7 +424,9 @@ class MarketCalendar:
                 close_hour, close_min = early_closes_map.get(cur, (16, 0))
 
                 open_et = datetime(cur.year, cur.month, cur.day, 9, 30, tzinfo=ET_ZONE)
-                close_et = datetime(cur.year, cur.month, cur.day, close_hour, close_min, tzinfo=ET_ZONE)
+                close_et = datetime(
+                    cur.year, cur.month, cur.day, close_hour, close_min, tzinfo=ET_ZONE
+                )
 
                 days.append(
                     TradingDay(

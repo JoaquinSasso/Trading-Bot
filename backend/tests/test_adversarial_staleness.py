@@ -261,20 +261,26 @@ class TestAdversarialFeedFlapping:
         guard.record_quote("SPY", q)
         guard.record_trade("SPY", t)
 
-        price, ok, reason = guard.validate_entry("SPY", q, t, sip_close=Decimal("400.00"), atr_5m=Decimal("1.00"))
+        price, ok, reason = guard.validate_entry(
+            "SPY", q, t, sip_close=Decimal("400.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is True
         assert price == Decimal("400.01")
 
         # Flap: desconexión repentina
         guard.record_disconnect("network reset")
-        price, ok, reason = guard.validate_entry("SPY", q, t, sip_close=Decimal("400.00"), atr_5m=Decimal("1.00"))
+        price, ok, reason = guard.validate_entry(
+            "SPY", q, t, sip_close=Decimal("400.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is False
         assert price is None
         assert reason == "FEED_DISCONNECTED"
 
         # validate_entry_or_raise debe levantar StaleDataError
         with pytest.raises(StaleDataError, match="FEED_DISCONNECTED"):
-            guard.validate_entry_or_raise("SPY", q, t, sip_close=Decimal("400.00"), atr_5m=Decimal("1.00"))
+            guard.validate_entry_or_raise(
+                "SPY", q, t, sip_close=Decimal("400.00"), atr_5m=Decimal("1.00")
+            )
 
 
 # ============================================================================
@@ -300,7 +306,9 @@ class TestAdversarialNonMonotonicArrivals:
         assert monitor.last_message_time == t_recent
         assert monitor.state == FeedHealthState.HEALTHY
 
-    def test_out_of_order_quotes_in_symbol_freshness_monitor(self, sim_clock: SimulatedClock) -> None:
+    def test_out_of_order_quotes_in_symbol_freshness_monitor(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """VERIFICACIÓN DE REMEDIACIÓN: Cotizaciones fuera de orden no sobreescriben datos frescos."""
         monitor = SymbolFreshnessMonitor(clock=sim_clock, default_tau_seconds=300.0)
         t_now = sim_clock.now()
@@ -337,7 +345,6 @@ class TestAdversarialNonMonotonicArrivals:
         is_fresh, reason = monitor.check_symbol_freshness("AAPL")
         assert is_fresh is True
         assert reason == "OK"
-
 
     def test_future_timestamps_in_entry_price_selector(self, sim_clock: SimulatedClock) -> None:
         """Verifica la respuesta ante timestamps en el futuro en get_entry_price.
@@ -438,16 +445,10 @@ class TestAdversarialThresholdCalibration:
         assert calibrate_freshness([1_000_000.0] * 10) == 600.0
 
         # 7. Filtro de NaN, infinitos y negativos
-        assert (
-            calibrate_freshness([float("nan"), float("inf"), -999.0, 350.0])
-            == 350.0
-        )
+        assert calibrate_freshness([float("nan"), float("inf"), -999.0, 350.0]) == 350.0
 
         # 8. Todos los valores no válidos -> fallback 300.0s
-        assert (
-            calibrate_freshness([float("nan"), float("inf"), -1.0, -100.0])
-            == 300.0
-        )
+        assert calibrate_freshness([float("nan"), float("inf"), -1.0, -100.0]) == 300.0
 
     def test_calibrate_freshness_numpy_and_pandas_type_vulnerability(self) -> None:
         """VERIFICACIÓN DE REMEDIACIÓN: calibrate_freshness soporta NumPy ndarrays y Pandas Series sin ValueError."""
@@ -462,7 +463,6 @@ class TestAdversarialThresholdCalibration:
         # Test 3: np.ndarray vacío
         arr_empty = np.array([])
         assert calibrate_freshness(arr_empty) == 300.0
-
 
 
 # ============================================================================
@@ -501,7 +501,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         fresh, reason = guard.check_symbol_freshness("AAPL")
         assert fresh is True
         assert reason == "OK"
-        price, ok, _ = guard.validate_entry("AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00"))
+        price, ok, _ = guard.validate_entry(
+            "AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is True
 
         # 2. Halted (H)
@@ -509,7 +511,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         fresh, reason = guard.check_symbol_freshness("AAPL")
         assert fresh is False
         assert reason == "SYMBOL_HALTED"
-        price, ok, v_reason = guard.validate_entry("AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00"))
+        price, ok, v_reason = guard.validate_entry(
+            "AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is False
         assert v_reason == "SYMBOL_HALTED"
 
@@ -518,7 +522,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         fresh, reason = guard.check_symbol_freshness("AAPL")
         assert fresh is False
         assert reason == "SYMBOL_HALTED"
-        price, ok, v_reason = guard.validate_entry("AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00"))
+        price, ok, v_reason = guard.validate_entry(
+            "AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is False
         assert v_reason == "SYMBOL_HALTED"
 
@@ -527,7 +533,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         fresh, reason = guard.check_symbol_freshness("AAPL")
         assert fresh is True
         assert reason == "OK"
-        price, ok, _ = guard.validate_entry("AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00"))
+        price, ok, _ = guard.validate_entry(
+            "AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is True
 
         # 5. Quote Only (Q)
@@ -535,7 +543,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         fresh, reason = guard.check_symbol_freshness("AAPL")
         assert fresh is False
         assert reason == "SYMBOL_HALTED"
-        price, ok, v_reason = guard.validate_entry("AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00"))
+        price, ok, v_reason = guard.validate_entry(
+            "AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is False
         assert v_reason == "SYMBOL_HALTED"
 
@@ -544,7 +554,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         fresh, reason = guard.check_symbol_freshness("AAPL")
         assert fresh is True
         assert reason == "OK"
-        price, ok, _ = guard.validate_entry("AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00"))
+        price, ok, _ = guard.validate_entry(
+            "AAPL", q, t, sip_close=Decimal("150.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is True
 
     def test_halt_status_code_normalization(self, sim_clock: SimulatedClock) -> None:
@@ -598,7 +610,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         assert reason == "POTENTIAL_HALT"
 
         # validate_entry debe bloquearse por POTENTIAL_HALT
-        price, ok, v_reason = guard.validate_entry("NVDA", q, t, sip_close=Decimal("100.00"), atr_5m=Decimal("1.00"))
+        price, ok, v_reason = guard.validate_entry(
+            "NVDA", q, t, sip_close=Decimal("100.00"), atr_5m=Decimal("1.00")
+        )
         assert ok is False
         assert price is None
         assert v_reason == "POTENTIAL_HALT"
@@ -610,10 +624,24 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         t_now = sim_clock.now()
 
         # AAPL y MSFT con argumentos nombrados
-        q_aapl = PriceQuote(symbol="AAPL", bid=Decimal("150.00"), ask=Decimal("150.02"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_aapl = PriceQuote(
+            symbol="AAPL",
+            bid=Decimal("150.00"),
+            ask=Decimal("150.02"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         t_aapl = TradeQuote(symbol="AAPL", price=Decimal("150.01"), timestamp=t_now, size=100)
 
-        q_msft = PriceQuote(symbol="MSFT", bid=Decimal("300.00"), ask=Decimal("300.05"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_msft = PriceQuote(
+            symbol="MSFT",
+            bid=Decimal("300.00"),
+            ask=Decimal("300.05"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         t_msft = TradeQuote(symbol="MSFT", price=Decimal("300.02"), timestamp=t_now, size=100)
 
         guard.record_quote("AAPL", q_aapl)
@@ -626,7 +654,9 @@ class TestAdversarialExchangeHaltAndPotentialHalt:
         guard.record_exchange_status("MSFT", "T")
 
         # AAPL bloqueado
-        _, ok_aapl, reason_aapl = guard.validate_entry("AAPL", q_aapl, t_aapl, Decimal("150.00"), Decimal("1.00"))
+        _, ok_aapl, reason_aapl = guard.validate_entry(
+            "AAPL", q_aapl, t_aapl, Decimal("150.00"), Decimal("1.00")
+        )
         assert ok_aapl is False
         assert reason_aapl == "SYMBOL_HALTED"
 
@@ -654,7 +684,14 @@ class TestAdversarialPricingAndAnomalyLimits:
 
         # Caso A: spread de exactamente 10.0 bps
         # bid=99.95, ask=100.05 -> diff=0.10, mid=100.00 -> spread_bps = (0.10 / 100.00) * 10000 = 10.0 bps
-        q_exact_10 = PriceQuote(symbol="TEST", bid=Decimal("99.95"), ask=Decimal("100.05"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_exact_10 = PriceQuote(
+            symbol="TEST",
+            bid=Decimal("99.95"),
+            ask=Decimal("100.05"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         t = TradeQuote(symbol="TEST", price=Decimal("99.98"), timestamp=t_now, size=100)
 
         price, mode = guard.get_entry_price(q_exact_10, t)
@@ -663,7 +700,14 @@ class TestAdversarialPricingAndAnomalyLimits:
 
         # Caso B: spread infinitesimalmente superior a 10.0 bps
         # bid=99.9499, ask=100.0501 -> diff=0.1002, mid=100.00 -> spread_bps = 10.02 bps
-        q_above_10 = PriceQuote(symbol="TEST", bid=Decimal("99.9499"), ask=Decimal("100.0501"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_above_10 = PriceQuote(
+            symbol="TEST",
+            bid=Decimal("99.9499"),
+            ask=Decimal("100.0501"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         price, mode = guard.get_entry_price(q_above_10, t)
         assert price == Decimal("99.98")
         assert mode == "LAST_TRADE"
@@ -675,14 +719,28 @@ class TestAdversarialPricingAndAnomalyLimits:
         t = TradeQuote(symbol="TEST", price=Decimal("100.00"), timestamp=t_now, size=100)
 
         # Libro cruzado: ask < bid
-        q_crossed = PriceQuote(symbol="TEST", bid=Decimal("105.00"), ask=Decimal("95.00"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_crossed = PriceQuote(
+            symbol="TEST",
+            bid=Decimal("105.00"),
+            ask=Decimal("95.00"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         price, mode = guard.get_entry_price(q_crossed, t)
         # El quote cruzado debe ignorarse; se utiliza el trade si está fresco
         assert price == Decimal("100.00")
         assert mode == "LAST_TRADE"
 
         # Bid negativo
-        q_neg = PriceQuote(symbol="TEST", bid=Decimal("-10.00"), ask=Decimal("100.00"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_neg = PriceQuote(
+            symbol="TEST",
+            bid=Decimal("-10.00"),
+            ask=Decimal("100.00"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         price, mode = guard.get_entry_price(q_neg, t)
         assert price == Decimal("100.00")
         assert mode == "LAST_TRADE"
@@ -723,15 +781,31 @@ class TestAdversarialPricingAndAnomalyLimits:
         assert guard.discard_counts["PRICE_ANOMALY"] == 0
 
         # 1. Operación normal aprobada -> no incrementa nada
-        q_ok = PriceQuote(symbol="SPY", bid=Decimal("400.00"), ask=Decimal("400.02"), timestamp=t_now, bid_size=100, ask_size=100)
+        q_ok = PriceQuote(
+            symbol="SPY",
+            bid=Decimal("400.00"),
+            ask=Decimal("400.02"),
+            timestamp=t_now,
+            bid_size=100,
+            ask_size=100,
+        )
         t_ok = TradeQuote(symbol="SPY", price=Decimal("400.01"), timestamp=t_now, size=100)
         guard.validate_entry("SPY", q_ok, t_ok, Decimal("400.00"), Decimal("1.00"))
         assert guard.discard_counts["STALE_PRICE"] == 0
         assert guard.discard_counts["PRICE_ANOMALY"] == 0
 
         # 2. Descarte por STALE_PRICE (quote y trade de hace 1 hora)
-        q_stale = PriceQuote(symbol="SPY", bid=Decimal("400.00"), ask=Decimal("400.02"), timestamp=t_now - timedelta(hours=1), bid_size=100, ask_size=100)
-        t_stale = TradeQuote(symbol="SPY", price=Decimal("400.01"), timestamp=t_now - timedelta(hours=1), size=100)
+        q_stale = PriceQuote(
+            symbol="SPY",
+            bid=Decimal("400.00"),
+            ask=Decimal("400.02"),
+            timestamp=t_now - timedelta(hours=1),
+            bid_size=100,
+            ask_size=100,
+        )
+        t_stale = TradeQuote(
+            symbol="SPY", price=Decimal("400.01"), timestamp=t_now - timedelta(hours=1), size=100
+        )
         guard.get_entry_price(q_stale, t_stale)
         assert guard.discard_counts["STALE_PRICE"] == 1
         assert guard.discard_counts["PRICE_ANOMALY"] == 0

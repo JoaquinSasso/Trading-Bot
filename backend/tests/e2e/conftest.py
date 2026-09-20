@@ -151,7 +151,9 @@ def assert_series_close(
     s_actual = pd.Series(actual)
     s_expected = pd.Series(expected)
 
-    assert len(s_actual) == len(s_expected), f"Length mismatch: {len(s_actual)} != {len(s_expected)}"
+    assert len(s_actual) == len(s_expected), (
+        f"Length mismatch: {len(s_actual)} != {len(s_expected)}"
+    )
 
     if check_nan:
         actual_nans = s_actual.isna()
@@ -210,7 +212,9 @@ class MockAlpacaProvider:
         # Cached bars store
         self.db_cache: dict[str, list[dict[str, Any]]] = {}
 
-    def map_symbol(self, symbol: str, direction: Literal["signal_to_exec", "exec_to_signal"] = "signal_to_exec") -> str:
+    def map_symbol(
+        self, symbol: str, direction: Literal["signal_to_exec", "exec_to_signal"] = "signal_to_exec"
+    ) -> str:
         if direction == "signal_to_exec":
             return self.proxy_map.get(symbol, symbol)
         # Reverse map
@@ -234,7 +238,9 @@ class MockAlpacaProvider:
         next_open = market_open if now < market_open else (market_open + timedelta(days=1))
         next_close = market_close if now < market_close else (market_close + timedelta(days=1))
 
-        return MarketClock(timestamp=now, is_open=is_open, next_open=next_open, next_close=next_close)
+        return MarketClock(
+            timestamp=now, is_open=is_open, next_open=next_open, next_close=next_close
+        )
 
     def get_calendar(self, start: date, end: date) -> list[TradingDay]:
         days: list[TradingDay] = []
@@ -242,11 +248,15 @@ class MockAlpacaProvider:
         while cur <= end:
             if cur.weekday() < 5:  # Weekday
                 # Thanksgiving Friday early close example
-                is_early = (cur.month == 11 and cur.day == 27)
+                is_early = cur.month == 11 and cur.day == 27
                 close_hour = 18 if is_early else 20  # 13:00 ET vs 16:00 ET in UTC
                 open_dt = datetime(cur.year, cur.month, cur.day, 13, 30, 0, tzinfo=UTC)
                 close_dt = datetime(cur.year, cur.month, cur.day, close_hour, 0, 0, tzinfo=UTC)
-                days.append(TradingDay(date=cur, open_time=open_dt, close_time=close_dt, is_early_close=is_early))
+                days.append(
+                    TradingDay(
+                        date=cur, open_time=open_dt, close_time=close_dt, is_early_close=is_early
+                    )
+                )
             cur += timedelta(days=1)
         return days
 
@@ -269,22 +279,30 @@ class MockAlpacaProvider:
         while cur <= end:
             if cur.weekday() < 5 and cur not in holidays and cur <= today:
                 for sym in symbols:
-                    records.append({
-                        "symbol": sym,
-                        "date": cur,
-                        "open": 500.0,
-                        "high": 505.0,
-                        "low": 498.0,
-                        "close": 502.0,
-                        "volume": 1000000,
-                        "adjusted": adjusted,
-                        "feed": "sip_delayed",
-                    })
+                    records.append(
+                        {
+                            "symbol": sym,
+                            "date": cur,
+                            "open": 500.0,
+                            "high": 505.0,
+                            "low": 498.0,
+                            "close": 502.0,
+                            "volume": 1000000,
+                            "adjusted": adjusted,
+                            "feed": "sip_delayed",
+                        }
+                    )
             cur += timedelta(days=1)
         return pd.DataFrame(records)
 
     async def get_intraday_bars(
-        self, symbols: list[str], timeframe: str, start: datetime, end: datetime, feed: str = "iex", adjusted: bool = True
+        self,
+        symbols: list[str],
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        feed: str = "iex",
+        adjusted: bool = True,
     ) -> pd.DataFrame:
         self.call_count += 1
         if not self.rate_limiter.acquire(self.clock.now()):
@@ -293,7 +311,9 @@ class MockAlpacaProvider:
         if feed == "sip_delayed":
             clamped_end = self.clamp_sip_end(end)
             if start >= clamped_end:
-                return pd.DataFrame(columns=["timestamp", "symbol", "open", "high", "low", "close", "volume"])
+                return pd.DataFrame(
+                    columns=["timestamp", "symbol", "open", "high", "low", "close", "volume"]
+                )
             eff_end = clamped_end
         else:
             eff_end = end
@@ -303,16 +323,18 @@ class MockAlpacaProvider:
         cur = start
         while cur <= eff_end:
             for sym in symbols:
-                records.append({
-                    "timestamp": cur,
-                    "symbol": sym,
-                    "open": 500.0,
-                    "high": 501.0,
-                    "low": 499.5,
-                    "close": 500.5,
-                    "volume": 2000,
-                    "is_synthetic": False,
-                })
+                records.append(
+                    {
+                        "timestamp": cur,
+                        "symbol": sym,
+                        "open": 500.0,
+                        "high": 501.0,
+                        "low": 499.5,
+                        "close": 500.5,
+                        "volume": 2000,
+                        "is_synthetic": False,
+                    }
+                )
             cur += step
         return pd.DataFrame(records)
 
@@ -322,7 +344,9 @@ class MockAlpacaProvider:
         ask = Decimal("500.04")  # spread: 0.04 / 500.02 = 0.8 bps <= 10 bps
         mid = (bid + ask) / Decimal("2")
         spread_bps = float((ask - bid) / mid * 10000)
-        return PriceQuote(symbol=symbol, bid=bid, ask=ask, midpoint=mid, spread_bps=spread_bps, timestamp=now)
+        return PriceQuote(
+            symbol=symbol, bid=bid, ask=ask, midpoint=mid, spread_bps=spread_bps, timestamp=now
+        )
 
     async def get_latest_trade(self, symbol: str) -> TradeQuote:
         now = self.clock.now()
@@ -349,7 +373,9 @@ class MockStalenessGuard:
         clamped_secs = min(600.0, max(180.0, p99_trade_gap_seconds))
         return timedelta(seconds=clamped_secs)
 
-    def check_symbol_freshness(self, symbol: str, last_update: datetime, tau: timedelta) -> tuple[bool, str]:
+    def check_symbol_freshness(
+        self, symbol: str, last_update: datetime, tau: timedelta
+    ) -> tuple[bool, str]:
         now = self.clock.now()
         age = now - last_update
         if age > tau:
@@ -392,7 +418,9 @@ class MockFinnhubEarningsClient:
         self.cache: dict[str, tuple[date, datetime]] = {}  # symbol -> (earnings_date, cached_at)
         self.network_error = False
 
-    def seed_earnings(self, symbol: str, earnings_date: date, cached_at: datetime | None = None) -> None:
+    def seed_earnings(
+        self, symbol: str, earnings_date: date, cached_at: datetime | None = None
+    ) -> None:
         ts = cached_at or self.clock.now()
         self.cache[symbol] = (earnings_date, ts)
 
@@ -432,14 +460,20 @@ class MockMacroFilter:
     def load_events(self, events: list[dict[str, Any]]) -> None:
         self.events = events
 
-    def is_macro_window_active(self, current_time: datetime, strategy_type: str = "intraday") -> tuple[bool, str]:
+    def is_macro_window_active(
+        self, current_time: datetime, strategy_type: str = "intraday"
+    ) -> tuple[bool, str]:
         for ev in self.events:
             ev_time = ev["timestamp"]
             impact = ev.get("impact", "high")
             ev_type = ev.get("type", "macro")
 
             # FOMC all-day swing strategy lockout
-            if ev_type == "FOMC" and strategy_type == "swing" and ev_time.date() == current_time.date():
+            if (
+                ev_type == "FOMC"
+                and strategy_type == "swing"
+                and ev_time.date() == current_time.date()
+            ):
                 return True, "FOMC_ALL_DAY_SWING_BLOCK"
 
             # 30m window around event
@@ -449,7 +483,9 @@ class MockMacroFilter:
                 return True, f"MACRO_WINDOW_{impact.upper()}"
         return False, "OK"
 
-    def check_calendar_expiry(self, current_time: datetime, horizon_days: int = 30) -> tuple[bool, int]:
+    def check_calendar_expiry(
+        self, current_time: datetime, horizon_days: int = 30
+    ) -> tuple[bool, int]:
         future_events = [ev for ev in self.events if ev["timestamp"] > current_time]
         if not future_events:
             return True, 0  # Alert: 0 days remaining
@@ -468,6 +504,7 @@ def get_pure_indicators_module():
     """Dynamically loads tbot.indicators.pure if available, otherwise returns None."""
     try:
         from tbot.indicators import pure
+
         return pure
     except ImportError:
         return None
@@ -477,6 +514,7 @@ def get_data_provider_class():
     """Dynamically loads AlpacaProvider if available, otherwise returns None."""
     try:
         from tbot.data.provider import AlpacaProvider
+
         return AlpacaProvider
     except ImportError:
         return None
@@ -486,6 +524,7 @@ def get_staleness_guard_class():
     """Dynamically loads StalenessGuard if available, otherwise returns None."""
     try:
         from tbot.data.staleness import StalenessGuard
+
         return StalenessGuard
     except ImportError:
         return None
@@ -495,6 +534,7 @@ def get_regime_filter_class():
     """Dynamically loads RegimeFilter if available, otherwise returns None."""
     try:
         from tbot.regime.filter import RegimeFilter
+
         return RegimeFilter
     except ImportError:
         return None
@@ -504,6 +544,7 @@ def get_event_calendar_class():
     """Dynamically loads EventCalendar if available, otherwise returns None."""
     try:
         from tbot.events.calendar import EventCalendar
+
         return EventCalendar
     except ImportError:
         return None

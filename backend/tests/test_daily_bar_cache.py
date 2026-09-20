@@ -174,7 +174,9 @@ async def test_defensive_fallback_on_db_exception() -> None:
     cache = DailyBarCache(clock=clock)
 
     broken_session = MagicMock(spec=AsyncSession)
-    broken_session.scalars = AsyncMock(side_effect=OperationalError("DB down", params={}, orig=Exception()))
+    broken_session.scalars = AsyncMock(
+        side_effect=OperationalError("DB down", params={}, orig=Exception())
+    )
     broken_session.rollback = AsyncMock()
 
     async def mock_fetch(
@@ -224,19 +226,21 @@ async def test_store_and_get_bars_direct(test_session: AsyncSession) -> None:
     clock = SimulatedClock(datetime(2026, 1, 20, 10, 0, 0, tzinfo=UTC))
     cache = DailyBarCache(clock=clock)
 
-    df_to_store = pd.DataFrame([
-        {
-            "symbol": "AAPL",
-            "date": date(2026, 1, 5),
-            "open": 150.0,
-            "high": 155.0,
-            "low": 149.0,
-            "close": 153.0,
-            "volume": 3000000,
-            "adjusted": True,
-            "feed": "sip_delayed",
-        }
-    ])
+    df_to_store = pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "date": date(2026, 1, 5),
+                "open": 150.0,
+                "high": 155.0,
+                "low": 149.0,
+                "close": 153.0,
+                "volume": 3000000,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            }
+        ]
+    )
 
     saved_count = await cache.store_bars(df_to_store, session=test_session)
     assert saved_count >= 1

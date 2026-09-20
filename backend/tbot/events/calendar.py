@@ -84,7 +84,9 @@ class AsyncRateLimiter:
             if self.last_update == 0.0:
                 self.last_update = now
             elapsed = now - self.last_update
-            self.tokens = min(float(self.rate), self.tokens + elapsed * (self.rate / self.per_seconds))
+            self.tokens = min(
+                float(self.rate), self.tokens + elapsed * (self.rate / self.per_seconds)
+            )
             self.last_update = now
 
             if self.tokens < 1.0:
@@ -311,13 +313,15 @@ class MacroFilter:
             if "FOMC" in name.upper():
                 ev_type = "FOMC"
 
-            parsed_events.append({
-                "name": name,
-                "type": ev_type,
-                "timestamp": dt_utc,
-                "datetime_et": dt_et,
-                "impact": ev.get("impact", "high"),
-            })
+            parsed_events.append(
+                {
+                    "name": name,
+                    "type": ev_type,
+                    "timestamp": dt_utc,
+                    "datetime_et": dt_et,
+                    "impact": ev.get("impact", "high"),
+                }
+            )
 
         self.events = parsed_events
 
@@ -340,7 +344,9 @@ class MacroFilter:
         - Bloqueo de 30 min antes y después para todo el universo.
         - Días de FOMC: bloqueo durante todo el día para estrategias swing.
         """
-        curr_utc = current_time if current_time.tzinfo is not None else current_time.replace(tzinfo=UTC)
+        curr_utc = (
+            current_time if current_time.tzinfo is not None else current_time.replace(tzinfo=UTC)
+        )
         curr_et_date = curr_utc.astimezone(ET_TIMEZONE).date()
 
         for ev in self.events:
@@ -368,7 +374,9 @@ class MacroFilter:
         self, current_time: datetime, horizon_days: int = 30
     ) -> tuple[bool, int]:
         """Monitorea si el horizonte de eventos futuros es inferior a 30 días."""
-        curr_utc = current_time if current_time.tzinfo is not None else current_time.replace(tzinfo=UTC)
+        curr_utc = (
+            current_time if current_time.tzinfo is not None else current_time.replace(tzinfo=UTC)
+        )
         future_events = [ev for ev in self.events if ev["timestamp"] > curr_utc]
         if not future_events:
             return True, 0
