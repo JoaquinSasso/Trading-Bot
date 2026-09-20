@@ -37,7 +37,15 @@ class HistoricalNewsFeatureStore:
             return cls(pd.DataFrame())
 
         if path.suffix == ".parquet":
-            df = pd.read_parquet(path)
+            try:
+                df = pd.read_parquet(path)
+            except (ImportError, Exception):
+                # Fallback suave al archivo CSV si pyarrow no está disponible
+                csv_path = path.with_suffix(".csv")
+                if csv_path.exists():
+                    df = pd.read_csv(csv_path)
+                else:
+                    df = pd.DataFrame()
         else:
             df = pd.read_csv(path)
 

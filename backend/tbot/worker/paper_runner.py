@@ -64,14 +64,22 @@ async def run_paper_session(
         news_store = HistoricalNewsFeatureStore.from_file(news_features_path)
         print(f"[INFO] Almacén de noticias cargado desde: {news_features_path}")
     else:
-        parquet_p = Path("data/news_features/historical_news_features.parquet")
-        csv_p = Path("data/news_features/historical_news_features.csv")
-        if parquet_p.exists():
-            news_store = HistoricalNewsFeatureStore.from_file(parquet_p)
-            print(f"[INFO] Almacén de noticias auto-detectado: {parquet_p}")
-        elif csv_p.exists():
-            news_store = HistoricalNewsFeatureStore.from_file(csv_p)
-            print(f"[INFO] Almacén de noticias auto-detectado: {csv_p}")
+        candidates = [
+            Path("data/news_features"),
+            Path("../data/news_features"),
+            Path(__file__).resolve().parents[3] / "data" / "news_features",
+        ]
+        for cdir in candidates:
+            parquet_p = cdir / "historical_news_features.parquet"
+            csv_p = cdir / "historical_news_features.csv"
+            if parquet_p.exists():
+                news_store = HistoricalNewsFeatureStore.from_file(parquet_p)
+                print(f"[INFO] Almacén de noticias auto-detectado: {parquet_p}")
+                break
+            elif csv_p.exists():
+                news_store = HistoricalNewsFeatureStore.from_file(csv_p)
+                print(f"[INFO] Almacén de noticias auto-detectado: {csv_p}")
+                break
 
     # 1. Inicialización de Componentes de Ejecución y Riesgo
     broker: BrokerAdapter
