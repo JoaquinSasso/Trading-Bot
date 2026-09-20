@@ -21,6 +21,7 @@ from tbot.strategies.s1_intraday_momentum import IntradayMomentumStrategy
 from tbot.strategies.s2_mean_reversion_rsi2 import MeanReversionRSI2Strategy
 from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
 from tbot.strategies.s4_opening_range_breakout import OpeningRangeBreakoutStrategy
+from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
 
 STRATEGY_MAP = {
     "s1": IntradayMomentumStrategy,
@@ -31,6 +32,8 @@ STRATEGY_MAP = {
     "trend_pullback": TrendPullbackStrategy,
     "s4": OpeningRangeBreakoutStrategy,
     "opening_range_breakout": OpeningRangeBreakoutStrategy,
+    "s5": DualMomentumLeaderStrategy,
+    "dual_momentum_leader": DualMomentumLeaderStrategy,
 }
 
 
@@ -43,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         "-s",
         type=str,
         default="s1",
-        help="Estrategia a evaluar (s1, s2, s3, s4, o nombre completo).",
+        help="Estrategia a evaluar (s1, s2, s3, s4, s5, o nombre completo).",
     )
     parser.add_argument(
         "--start", type=str, default="2025-01-01", help="Fecha inicio (YYYY-MM-DD)."

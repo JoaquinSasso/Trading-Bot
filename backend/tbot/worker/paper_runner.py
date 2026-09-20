@@ -40,6 +40,7 @@ from tbot.risk.ownership import OwnershipLedger
 from tbot.strategies.interfaces import Signal, StrategyContext
 from tbot.strategies.s1_intraday_momentum import IntradayMomentumStrategy
 from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
+from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
 
 
 async def run_paper_session(
@@ -240,6 +241,40 @@ async def run_paper_session(
                 news_store=news_store,
             )
 
+    print(
+        f"\n[{t_1545.strftime('%H:%M:%S')} ET] 3b. Evaluación Estrategia S5 (Dual Momentum Leader v1.0.0):"
+    )
+    strat_s5 = DualMomentumLeaderStrategy()
+    ctx_s5 = StrategyContext(
+        now=t_1545,
+        regime=MarketRegime.BULL_CALM,
+        daily_bars=daily_bars,
+        intraday_bars={},
+        current_prices=current_prices,
+        portfolio_positions=set(guardian.tracked_positions.keys()),
+    )
+    s5_signals = strat_s5.generate(ctx_s5)
+    if not s5_signals:
+        print("   [INFO] S5 no detectó nuevos líderes con momentum positivo sobre EMA20.")
+    else:
+        print(
+            f"   [SEÑALES DETECTADAS] S5 generó {len(s5_signals)} señal(es). Evaluando cadena de decisión:"
+        )
+        for sig in s5_signals:
+            await _process_signal(
+                sig,
+                veto,
+                risk_gate,
+                router,
+                guardian,
+                broker,
+                acc_info,
+                current_prices,
+                t_1545,
+                decision_journal,
+                news_store=news_store,
+            )
+
     # ------------------------------------------------------------------
     # FASE 4: 15:58 ET - Cierre de Posiciones Intradía (Guardian)
     # ------------------------------------------------------------------
@@ -404,7 +439,12 @@ async def _process_signal(
         exit_at_close=sig.exit_at_close,
     )
 
-    order_info = f"Orden Bracket {sizing.shares} {sizing.execution_symbol} @ ${sizing.entry_price:,.2f} (SL: ${sizing.stop_price}, TP: ${sizing.take_profit_price})"
+    tp_str = (
+        f"${sizing.take_profit_price:,.2f}"
+        if sizing.take_profit_price is not None
+        else "Trailing EMA20"
+    )
+    order_info = f"Orden Bracket {sizing.shares} {sizing.execution_symbol} @ ${sizing.entry_price:,.2f} (SL: ${sizing.stop_price}, TP: {tp_str})"
     journal.append(
         {
             "symbol": sig.symbol,
