@@ -1,0 +1,147 @@
+# Valores por defecto y rangos permitidos para el Bot de Trading Algorítmico
+# Cualquier cambio en runtime desde la UI debe cumplir estrictamente estos rangos.
+
+parameters:
+  account_mode:
+    default: "margin_no_leverage"
+    allowed_values: ["margin_no_leverage", "cash"]
+    description: "Modo de cuenta Alpaca: margin_no_leverage (rotación sin apalancamiento) o cash (tracking T+1)"
+
+  bot_allocation_pct:
+    default: 50.0
+    min: 0.0
+    max: 100.0
+    description: "Porcentaje del capital/equity total de la cuenta asignado al bot"
+
+  risk_per_trade_pct:
+    default: 0.5
+    min: 0.25
+    max: 1.0
+    description: "Porcentaje del capital del bot arriesgado por operación"
+
+  max_risk_per_trade_pct_hard:
+    default: 1.0
+    min: 0.5
+    max: 2.0
+    description: "Riesgo máximo tolerado para redondear a 1 acción entera en vez de fraccional"
+
+  allow_fractional_bot:
+    default: true
+    allowed_values: [true, false]
+    description: "Habilita fallback fraccional para el bot cuando 1 acción entera supera el riesgo"
+
+  max_position_notional:
+    default: 400.0
+    min: 20.0
+    max: 2000.0
+    description: "Tope nocional máximo en USD por posición individual"
+
+  min_order_notional:
+    default: 10.0
+    min: 1.0
+    max: 100.0
+    description: "Monto nocional mínimo en USD por orden enviada al broker"
+
+  max_open_positions:
+    default: 4
+    min: 1
+    max: 8
+    description: "Cantidad máxima de posiciones simultáneas abiertas por el bot"
+
+  max_positions_per_cluster:
+    default: 2
+    min: 1
+    max: 3
+    description: "Cantidad máxima de posiciones simultáneas en un mismo cluster de correlación"
+
+  min_reward_risk:
+    default: 1.5
+    min: 1.0
+    max: 4.0
+    description: "Relación mínima de beneficio/riesgo (TP / riesgo) requerida para abrir operación"
+
+  atr_stop_multiple:
+    default: 1.5
+    min: 1.0
+    max: 2.5
+    description: "Múltiplo de ATR por defecto para distancia de stop loss"
+
+  min_signal_score:
+    default: 0.5
+    min: 0.0
+    max: 1.0
+    description: "Puntuación mínima de calidad requerida para procesar una señal de estrategia"
+
+  veto_mode:
+    default: "required"
+    allowed_values: ["off", "advisory", "required"]
+    description: "Modo de veto de IA: off (desactivado), advisory (registra sin bloquear), required (bloquea si rechaza o falla)"
+
+  daily_loss_limit_pct:
+    default: 2.0
+    min: 0.5
+    max: 5.0
+    description: "Pérdida diaria máxima del bot antes de pausar nuevas entradas por el resto del día"
+
+  emergency_loss_limit_pct:
+    default: 3.5
+    min: 2.5
+    max: 7.0
+    description: "Umbral de pérdida diaria de emergencia que dispara el cierre a mercado (flatten) de todas las posiciones del bot"
+
+  weekly_loss_limit_pct:
+    default: 5.0
+    min: 2.0
+    max: 10.0
+    description: "Pérdida semanal máxima del bot antes de pausar hasta reactivación manual"
+
+  max_consecutive_losses:
+    default: 4
+    min: 2
+    max: 10
+    description: "Cantidad de pérdidas consecutivas antes de pausar el bot por 1 día hábil"
+
+  macro_block_minutes:
+    default: 30
+    min: 0
+    max: 120
+    description: "Ventana de bloqueo en minutos antes y después de un dato macroeconómico importante"
+
+  earnings_block_days:
+    default: 2
+    min: 0
+    max: 5
+    description: "Días hábiles antes del reporte de balance en que se bloquean entradas nuevas en ese ticker"
+
+  manual_override_approval:
+    default: false
+    allowed_values: [true, false]
+    description: "Permitir que el bot solicite operar tickers con posiciones manuales vía correo"
+
+  approval_expiry_minutes:
+    default: 15
+    min: 5
+    max: 60
+    description: "Minutos de validez del enlace de aprobación enviado por correo electrónico"
+
+  opportunity_alert_min_score:
+    default: 0.8
+    min: 0.5
+    max: 1.0
+    description: "Puntuación mínima de señal para emitir alerta inmediata por correo al usuario"
+
+  max_alerts_per_day:
+    default: 3
+    min: 0
+    max: 10
+    description: "Tope máximo de alertas de oportunidad enviadas por correo por día"
+
+llm:
+  gemini:
+    model: "gemini-2.5-flash"
+    rpm_limit: 15
+    rpd_limit: 1500
+  groq:
+    model: "llama-3.3-70b-versatile"
+    rpm_limit: 30
+    rpd_limit: 14400

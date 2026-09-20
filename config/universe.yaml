@@ -1,0 +1,70 @@
+# Universo inicial de tickers, proxies de ejecución y clusters de correlación
+symbols:
+  - signal_symbol: "SPY"
+    execution_symbol: "SPYM"
+    cluster: "index_broad"
+    enabled: true
+    notes: "Proxy de bajo coste unitario para operar acciones enteras con brackets nativos"
+
+  - signal_symbol: "QQQ"
+    execution_symbol: "QQQM"
+    cluster: "tech"
+    enabled: true
+    notes: "Proxy Nasdaq 100 de menor precio nominal"
+
+  - signal_symbol: "GLD"
+    execution_symbol: "GLDM"
+    cluster: "gold"
+    enabled: true
+    notes: "Proxy de oro para diversificación"
+
+  - signal_symbol: "AAPL"
+    execution_symbol: "AAPL"
+    cluster: "tech"
+    enabled: true
+
+  - signal_symbol: "GOOGL"
+    execution_symbol: "GOOGL"
+    cluster: "tech"
+    enabled: true
+
+  - signal_symbol: "NVDA"
+    execution_symbol: "NVDA"
+    cluster: "semis"
+    enabled: true
+
+  - signal_symbol: "MU"
+    execution_symbol: "MU"
+    cluster: "semis"
+    enabled: true
+
+  - signal_symbol: "LRCX"
+    execution_symbol: "LRCX"
+    cluster: "semis"
+    enabled: true
+
+  - signal_symbol: "IWM"
+    execution_symbol: "IWM"
+    cluster: "index_smallcap"
+    enabled: true
+
+  - signal_symbol: "XLE"
+    execution_symbol: "XLE"
+    cluster: "energy"
+    enabled: true
+
+  - signal_symbol: "XLV"
+    execution_symbol: "XLV"
+    cluster: "healthcare"
+    enabled: true
+
+  - signal_symbol: "TLT"
+    execution_symbol: "TLT"
+    cluster: "bonds"
+    enabled: true
+
+  - signal_symbol: "ABAT"
+    execution_symbol: "ABAT"
+    cluster: "penny_speculative"
+    enabled: false
+    notes: "Excluido por baja liquidez y volatilidad extrema"

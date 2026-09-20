@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tbot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tbot_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tbot_password}
+      POSTGRES_DB: ${POSTGRES_DB:-tbot_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tbot_user} -d ${POSTGRES_DB:-tbot_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tbot_api
+    restart: unless-stopped
+    command: ["uvicorn", "tbot.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./config:/app/config
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://tbot_user:tbot_password@postgres:5432/tbot_db
+      - DATABASE_SYNC_URL=postgresql://tbot_user:tbot_password@postgres:5432/tbot_db
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tbot_worker
+    restart: unless-stopped
+    command: ["python", "-m", "tbot.worker.main"]
+    volumes:
+      - ./backend:/app
+      - ./config:/app/config
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://tbot_user:tbot_password@postgres:5432/tbot_db
+      - DATABASE_SYNC_URL=postgresql://tbot_user:tbot_password@postgres:5432/tbot_db
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
