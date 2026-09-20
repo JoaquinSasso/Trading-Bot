@@ -105,21 +105,25 @@ class HistoricalDataLoader:
                 time_key = "timestamp"
                 out_filename = f"{symbol}_{interval}.csv"
 
-            df = pd.DataFrame({
-                time_key: dates,
-                "open": [round(x, 4) if x is not None else None for x in quote["open"]],
-                "high": [round(x, 4) if x is not None else None for x in quote["high"]],
-                "low": [round(x, 4) if x is not None else None for x in quote["low"]],
-                "close": [round(x, 4) if x is not None else None for x in quote["close"]],
-                "volume": quote["volume"],
-                "symbol": symbol,
-            }).dropna()
+            df = pd.DataFrame(
+                {
+                    time_key: dates,
+                    "open": [round(x, 4) if x is not None else None for x in quote["open"]],
+                    "high": [round(x, 4) if x is not None else None for x in quote["high"]],
+                    "low": [round(x, 4) if x is not None else None for x in quote["low"]],
+                    "close": [round(x, 4) if x is not None else None for x in quote["close"]],
+                    "volume": quote["volume"],
+                    "symbol": symbol,
+                }
+            ).dropna()
 
             target_path = self.data_dir / out_filename
             df.to_csv(target_path, index=False)
             return df
         except Exception as e:
-            raise RuntimeError(f"Error al descargar datos históricos reales para {symbol}: {e}") from e
+            raise RuntimeError(
+                f"Error al descargar datos históricos reales para {symbol}: {e}"
+            ) from e
 
     def save_to_parquet(self, df: pd.DataFrame, file_name: str) -> Path:
         """Guarda un DataFrame de barras en archivo Parquet en el directorio de cache."""
