@@ -13,6 +13,7 @@ from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
 from tbot.strategies.s4_opening_range_breakout import OpeningRangeBreakoutStrategy
 from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
 from tbot.strategies.s6_intraday_5m_multi_horizon import Intraday5mMultiHorizonStrategy
+from tbot.strategies.s7_pid_scorer import PIDScoreResult, score_universe_pid
 
 __all__ = [
     "Signal",
@@ -26,4 +27,6 @@ __all__ = [
     "OpeningRangeBreakoutStrategy",
     "DualMomentumLeaderStrategy",
     "Intraday5mMultiHorizonStrategy",
+    "PIDScoreResult",
+    "score_universe_pid",
 ]
