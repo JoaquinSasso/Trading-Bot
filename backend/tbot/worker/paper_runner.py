@@ -47,7 +47,7 @@ async def run_paper_session(
     target_date: date = date(2025, 11, 14),
     broker_type: str = "simulated",
     capital: float = 2000.0,
-    veto_mode: str = "quantitative",
+    veto_mode: str = "off",
     symbols: list[str] | None = None,
     news_features_path: str | None = None,
 ) -> int:
@@ -56,7 +56,7 @@ async def run_paper_session(
     print("\n" + "=" * 76)
     print("           SIMULACIÓN DE SESIÓN DE DECISIONES CON PAPER MONEY")
     print(f"  Fecha de Simulación: {target_date} | Capital Asignado: ${capital:,.2f}")
-    print(f"  Modo Broker: {broker_type.upper()} | Modo Veto IA: {veto_mode.upper()}")
+    print(f"  Modo Broker: {broker_type.upper()} | Modo Veto IA: {veto_mode.upper()} (Decisión D-01: NLP Desacoplado)")
     print("=" * 76 + "\n")
 
     # 0. Carga de Almacén de Características de Noticias (si existe)

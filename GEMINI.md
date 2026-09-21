@@ -1,9 +1,10 @@
 # Directrices y Reglas del Trading Bot Cuantitativo
 
 ## 1. Principios No Negociables de Riesgo y Arquitectura
-- **Fail-Closed y Veto Determinista:** Ninguna orden de mercado se envía sin stop loss activo. Las decisiones de trading son 100% de código determinista; los modelos de NLP (FinBERT) y LLMs proporcionan únicamente *features* continuas normalizadas (`sentiment_mean`, `negative_share`, `top_topics`), nunca ejecución directa ni discrecional.
-- **Cero Sesgo de Futuro (Lookahead Bias):** Cualquier cálculo de señal, backtest o agregado de noticias debe respetar estrictamente `timestamp <= as_of` (15:45 ET de cada sesión).
+- **Fail-Closed y Veto Determinista:** Ninguna orden de mercado se envía sin stop loss activo. Las decisiones de trading son 100% de código determinista basado en precio y volumen; tras la auditoría v2.0 (Decisión D-01), los modelos de NLP (FinBERT) quedan desacoplados del camino crítico de ejecución en producción y archivados como telemetría offline de investigación.
+- **Cero Sesgo de Futuro (Lookahead Bias):** Cualquier cálculo de señal, backtest o agregado de datos debe respetar estrictamente `timestamp <= as_of` (15:45 ET de cada sesión).
 - **Límites de Seguridad:** Cortacircuitos diario automático al -2.0%, liquidación de emergencia al -3.5%, máximo 4 posiciones abiertas simultáneas y exclusividad de 1 dueño por ticker (bot vs manual).
+- **Condición de Capital Real (Auditoría v2.2):** Con PBO = 84.45% y Sharpe observado de 1.11 por debajo del umbral crítico SR* = 1.22, seis meses impecables de paper trading NO habilitan capital real. El paper trading demuestra que el motor funciona (condición necesaria y no suficiente). La existencia de ventaja estadística se responde con T-10 a T-12 más evidencia forward. Las pruebas 2010–2026 de S5 no son punto-en-el-tiempo y no constituyen validación fuera de muestra (F-19).
 
 ## 2. Invariantes Cuantitativas de Estrategia y Portafolio
 - **Estrategia Principal (S5 Dual Momentum Leader):** Selección transversal basada en momentum a 45 días, salida con Trailing Stop EMA(25), y límite de 30 días de retención.
