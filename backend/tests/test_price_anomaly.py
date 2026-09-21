@@ -153,13 +153,28 @@ class TestAnomalyCornerAndEdgeCases:
         detector = AnomalyDetector()
 
         # Precio None
-        assert detector.check_price_anomaly(None, Decimal("100"), Decimal("1")) == (False, "MISSING_PRICE_DATA")
-        assert detector.check_price_anomaly(Decimal("100"), None, Decimal("1")) == (False, "MISSING_PRICE_DATA")
+        assert detector.check_price_anomaly(None, Decimal("100"), Decimal("1")) == (
+            False,
+            "MISSING_PRICE_DATA",
+        )
+        assert detector.check_price_anomaly(Decimal("100"), None, Decimal("1")) == (
+            False,
+            "MISSING_PRICE_DATA",
+        )
 
         # Precio cero o negativo
-        assert detector.check_price_anomaly(Decimal("0.0"), Decimal("100"), Decimal("1")) == (False, "INVALID_PRICE")
-        assert detector.check_price_anomaly(Decimal("-5.0"), Decimal("100"), Decimal("1")) == (False, "INVALID_PRICE")
-        assert detector.check_price_anomaly(Decimal("100"), Decimal("0.0"), Decimal("1")) == (False, "INVALID_PRICE")
+        assert detector.check_price_anomaly(Decimal("0.0"), Decimal("100"), Decimal("1")) == (
+            False,
+            "INVALID_PRICE",
+        )
+        assert detector.check_price_anomaly(Decimal("-5.0"), Decimal("100"), Decimal("1")) == (
+            False,
+            "INVALID_PRICE",
+        )
+        assert detector.check_price_anomaly(Decimal("100"), Decimal("0.0"), Decimal("1")) == (
+            False,
+            "INVALID_PRICE",
+        )
 
     def test_numeric_type_flexibility_without_type_error(self) -> None:
         detector = AnomalyDetector()
@@ -186,7 +201,9 @@ class TestAnomalyCornerAndEdgeCases:
 class TestStalenessGuardAnomalyIntegration:
     """Verifica la integración del detector de anomalías dentro de StalenessGuard."""
 
-    def test_staleness_guard_check_price_anomaly_increments_metric(self, sim_clock: SimulatedClock) -> None:
+    def test_staleness_guard_check_price_anomaly_increments_metric(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock)
         sip_close = Decimal("500.00")
         atr_5m = Decimal("1.00")
@@ -232,7 +249,9 @@ class TestStalenessGuardAnomalyIntegration:
         assert price is None
         assert reason == "PRICE_ANOMALY"
 
-    def test_validate_entry_or_raise_raises_price_anomaly_error(self, sim_clock: SimulatedClock) -> None:
+    def test_validate_entry_or_raise_raises_price_anomaly_error(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock, enforce_market_hours=False)
         guard.record_message()
         now = sim_clock.now()

@@ -45,7 +45,9 @@ class MockBarSet:
 
 
 class MockQuote:
-    def __init__(self, bid_price: float, ask_price: float, bid_size: int, ask_size: int, timestamp: datetime) -> None:
+    def __init__(
+        self, bid_price: float, ask_price: float, bid_size: int, ask_size: int, timestamp: datetime
+    ) -> None:
         self.bid_price = bid_price
         self.ask_price = ask_price
         self.bid_size = bid_size
@@ -118,7 +120,9 @@ async def test_intraday_bars_iex_local_5m_aggregation(sim_clock: SimulatedClock)
     # Generate 5 one-minute mock bars
     base_time = start
     bars_1m = [
-        MockAlpacaBar(base_time + timedelta(minutes=i), 500.0 + i, 501.0 + i, 499.0 + i, 500.5 + i, 100.0)
+        MockAlpacaBar(
+            base_time + timedelta(minutes=i), 500.0 + i, 501.0 + i, 499.0 + i, 500.5 + i, 100.0
+        )
         for i in range(5)
     ]
     mock_barset = MockBarSet({"SPY": bars_1m})
@@ -147,7 +151,11 @@ async def test_intraday_bars_iex_local_5m_aggregation(sim_clock: SimulatedClock)
 @pytest.mark.asyncio
 async def test_get_daily_bars_direct_and_proxy_mapping(sim_clock: SimulatedClock) -> None:
     d1 = date(2026, 9, 18)
-    bars_daily = [MockAlpacaBar(datetime(2026, 9, 18, 20, 0, 0, tzinfo=UTC), 500.0, 505.0, 498.0, 502.0, 1000000.0)]
+    bars_daily = [
+        MockAlpacaBar(
+            datetime(2026, 9, 18, 20, 0, 0, tzinfo=UTC), 500.0, 505.0, 498.0, 502.0, 1000000.0
+        )
+    ]
     mock_barset = MockBarSet({"SPY": bars_daily})
 
     mock_client = MagicMock()
@@ -174,7 +182,9 @@ async def test_get_latest_quote(sim_clock: SimulatedClock) -> None:
     now = sim_clock.now()
     mock_client = MagicMock()
     mock_client.get_stock_latest_quote.return_value = {
-        "SPY": MockQuote(bid_price=500.10, ask_price=500.20, bid_size=10, ask_size=15, timestamp=now)
+        "SPY": MockQuote(
+            bid_price=500.10, ask_price=500.20, bid_size=10, ask_size=15, timestamp=now
+        )
     }
 
     provider = AlpacaProvider(clock=sim_clock, historical_client=mock_client)

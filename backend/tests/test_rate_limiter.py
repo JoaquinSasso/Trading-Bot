@@ -16,7 +16,9 @@ from tbot.data.rate_limiter import (
 
 
 class MockAPIError(Exception):
-    def __init__(self, status_code: int, message: str = "API Error", retry_after: float | None = None) -> None:
+    def __init__(
+        self, status_code: int, message: str = "API Error", retry_after: float | None = None
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.retry_after = retry_after
@@ -137,7 +139,9 @@ class TestAsyncTokenBucket:
 
 class TestBackoffPolicy:
     def test_progression_without_jitter(self) -> None:
-        policy = BackoffPolicy(initial_delay=1.0, multiplier=2.0, max_retries=3, max_delay=10.0, jitter=False)
+        policy = BackoffPolicy(
+            initial_delay=1.0, multiplier=2.0, max_retries=3, max_delay=10.0, jitter=False
+        )
         assert policy.compute_delay(0) == 1.0
         assert policy.compute_delay(1) == 2.0
         assert policy.compute_delay(2) == 4.0
@@ -224,7 +228,9 @@ class TestExecuteWithRetry:
 
         policy = BackoffPolicy(max_retries=2, jitter=False)
         with pytest.raises(RateLimitExceededError) as exc_info:
-            await execute_with_retry(always_fails, policy=policy, sleep_func=lambda _: asyncio.sleep(0))
+            await execute_with_retry(
+                always_fails, policy=policy, sleep_func=lambda _: asyncio.sleep(0)
+            )
         assert call_count == 3  # 1 initial + 2 retries
         assert exc_info.value.retry_after == 2.0
 

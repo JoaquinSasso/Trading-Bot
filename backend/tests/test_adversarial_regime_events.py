@@ -99,11 +99,13 @@ class TestRegimeFilterAdversarialEdgeCases:
         assert snapshot.inputs["vol_70th_percentile"] == 0.0
         assert snapshot.inputs["spy_close"] == snapshot.inputs["sma_200"]
 
-    def test_regime_constant_percentage_returns_zero_volatility(self, sim_clock: SimulatedClock) -> None:
+    def test_regime_constant_percentage_returns_zero_volatility(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """Constant percentage returns (close > SMA200, 0 vol std) evaluate gracefully."""
         rf = RegimeFilter(clock=sim_clock, min_bars=200)
         dates = [date(2025, 1, 1) + timedelta(days=i) for i in range(250)]
-        prices = [500.0 * (1.001 ** i) for i in range(250)]
+        prices = [500.0 * (1.001**i) for i in range(250)]
         df = pd.DataFrame({"symbol": "SPY", "date": dates, "close": prices})
 
         snapshot = rf.classify(df)
@@ -120,8 +122,14 @@ class TestRegimeFilterAdversarialEdgeCases:
             ("single_zero_at_middle", lambda p: [0.0 if i == 100 else v for i, v in enumerate(p)]),
             ("single_zero_at_start", lambda p: [0.0 if i == 0 else v for i, v in enumerate(p)]),
             ("single_zero_at_end", lambda p: [0.0 if i == 199 else v for i, v in enumerate(p)]),
-            ("single_negative_at_middle", lambda p: [-10.0 if i == 100 else v for i, v in enumerate(p)]),
-            ("single_negative_at_start", lambda p: [-500.0 if i == 0 else v for i, v in enumerate(p)]),
+            (
+                "single_negative_at_middle",
+                lambda p: [-10.0 if i == 100 else v for i, v in enumerate(p)],
+            ),
+            (
+                "single_negative_at_start",
+                lambda p: [-500.0 if i == 0 else v for i, v in enumerate(p)],
+            ),
             ("all_zeros", lambda p: [0.0] * len(p)),
             ("all_negatives", lambda p: [-100.0] * len(p)),
         ],
@@ -159,7 +167,9 @@ class TestRegimeFilterAdversarialEdgeCases:
         assert snapshot.inputs["is_blocked"] is True
         assert snapshot.inputs["reason"] in ("LATEST_CLOSE_IS_NAN", "SMA_CALCULATION_NAN")
 
-    def test_regime_single_nan_inside_active_sma_window_250_bars(self, sim_clock: SimulatedClock) -> None:
+    def test_regime_single_nan_inside_active_sma_window_250_bars(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """In 250 bars, a NaN inside the last 200 bars (e.g. index 100) triggers SMA_CALCULATION_NAN."""
         rf = RegimeFilter(clock=sim_clock, min_bars=200)
         dates = [date(2025, 1, 1) + timedelta(days=i) for i in range(250)]
@@ -249,7 +259,9 @@ class TestFinnhubFailClosedOutageSimulation:
         assert edate == earnings_date
 
     @pytest.mark.asyncio
-    async def test_cache_age_72_01_hours_blocks_fail_closed(self, sim_clock: SimulatedClock) -> None:
+    async def test_cache_age_72_01_hours_blocks_fail_closed(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         """Cache age of exactly 72.01 hours (> 72.0h) blocks trading with EARNINGS_DATA_UNAVAILABLE."""
         client = FinnhubEarningsClient(clock=sim_clock)
         client.network_error = True  # Network is down
@@ -346,13 +358,29 @@ class TestMacroFilterBlackoutBoundariesPrecision:
     @pytest.mark.parametrize(
         ("offset", "expected_blocked", "expected_reason"),
         [
-            (timedelta(minutes=30, seconds=1), False, "OK"),                    # -30m 1s -> outside window
-            (timedelta(minutes=30), True, "MACRO_WINDOW_HIGH"),                 # -30m 0s -> exact boundary (BLOCKED)
-            (timedelta(minutes=29, seconds=59), True, "MACRO_WINDOW_HIGH"),     # -29m 59s -> 1s inside window (BLOCKED)
-            (timedelta(seconds=0), True, "MACRO_WINDOW_HIGH"),                  # 0s -> event time (BLOCKED)
-            (-timedelta(minutes=29, seconds=59), True, "MACRO_WINDOW_HIGH"),    # +29m 59s -> 1s inside window (BLOCKED)
-            (-timedelta(minutes=30), True, "MACRO_WINDOW_HIGH"),                # +30m 0s -> exact boundary (BLOCKED)
-            (-timedelta(minutes=30, seconds=1), False, "OK"),                   # +30m 1s -> outside window
+            (timedelta(minutes=30, seconds=1), False, "OK"),  # -30m 1s -> outside window
+            (
+                timedelta(minutes=30),
+                True,
+                "MACRO_WINDOW_HIGH",
+            ),  # -30m 0s -> exact boundary (BLOCKED)
+            (
+                timedelta(minutes=29, seconds=59),
+                True,
+                "MACRO_WINDOW_HIGH",
+            ),  # -29m 59s -> 1s inside window (BLOCKED)
+            (timedelta(seconds=0), True, "MACRO_WINDOW_HIGH"),  # 0s -> event time (BLOCKED)
+            (
+                -timedelta(minutes=29, seconds=59),
+                True,
+                "MACRO_WINDOW_HIGH",
+            ),  # +29m 59s -> 1s inside window (BLOCKED)
+            (
+                -timedelta(minutes=30),
+                True,
+                "MACRO_WINDOW_HIGH",
+            ),  # +30m 0s -> exact boundary (BLOCKED)
+            (-timedelta(minutes=30, seconds=1), False, "OK"),  # +30m 1s -> outside window
         ],
     )
     def test_blackout_boundary_seconds_precision(
@@ -365,9 +393,9 @@ class TestMacroFilterBlackoutBoundariesPrecision:
         """Tests boundaries: -30m-1s, -30m, -29m59s, event time, +29m59s, +30m, +30m+1s."""
         mf = MacroFilter(clock=sim_clock, yaml_path=None, macro_block_minutes=30)
         event_time = datetime(2026, 9, 15, 12, 30, 0, tzinfo=UTC)
-        mf.load_events([
-            {"name": "CPI Inflation", "type": "CPI", "timestamp": event_time, "impact": "high"}
-        ])
+        mf.load_events(
+            [{"name": "CPI Inflation", "type": "CPI", "timestamp": event_time, "impact": "high"}]
+        )
 
         query_time = event_time - offset
         blocked, reason = mf.is_macro_window_active(query_time, strategy_type="intraday")
@@ -388,28 +416,85 @@ class TestFOMCLockoutSwingVsIntraday:
         mf = MacroFilter(clock=sim_clock, yaml_path=None, macro_block_minutes=30)
         # FOMC meeting at 14:00 ET (18:00 UTC) on 2026-09-16
         fomc_utc = datetime(2026, 9, 16, 18, 0, 0, tzinfo=UTC)
-        mf.load_events([
-            {
-                "name": "FOMC Rate Decision and Press Conference",
-                "type": "FOMC",
-                "timestamp": fomc_utc,
-                "impact": "critical",
-            }
-        ])
+        mf.load_events(
+            [
+                {
+                    "name": "FOMC Rate Decision and Press Conference",
+                    "type": "FOMC",
+                    "timestamp": fomc_utc,
+                    "impact": "critical",
+                }
+            ]
+        )
 
         timeline = [
-            ("00:01 ET (midnight start)", datetime(2026, 9, 16, 0, 1, 0, tzinfo=ET_TIMEZONE), True, False),
-            ("08:00 ET (pre-market)", datetime(2026, 9, 16, 8, 0, 0, tzinfo=ET_TIMEZONE), True, False),
-            ("09:30 ET (market open)", datetime(2026, 9, 16, 9, 30, 0, tzinfo=ET_TIMEZONE), True, False),
+            (
+                "00:01 ET (midnight start)",
+                datetime(2026, 9, 16, 0, 1, 0, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
+            (
+                "08:00 ET (pre-market)",
+                datetime(2026, 9, 16, 8, 0, 0, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
+            (
+                "09:30 ET (market open)",
+                datetime(2026, 9, 16, 9, 30, 0, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
             ("12:00 ET (midday)", datetime(2026, 9, 16, 12, 0, 0, tzinfo=ET_TIMEZONE), True, False),
-            ("13:29:59 ET (1s before 30m window)", datetime(2026, 9, 16, 13, 29, 59, tzinfo=ET_TIMEZONE), True, False),
-            ("13:30:00 ET (start of 30m window)", datetime(2026, 9, 16, 13, 30, 0, tzinfo=ET_TIMEZONE), True, True),
-            ("14:00:00 ET (FOMC announcement)", datetime(2026, 9, 16, 14, 0, 0, tzinfo=ET_TIMEZONE), True, True),
-            ("14:30:00 ET (end of 30m window)", datetime(2026, 9, 16, 14, 30, 0, tzinfo=ET_TIMEZONE), True, True),
-            ("14:30:01 ET (1s after 30m window)", datetime(2026, 9, 16, 14, 30, 1, tzinfo=ET_TIMEZONE), True, False),
-            ("15:50:00 ET (late afternoon)", datetime(2026, 9, 16, 15, 50, 0, tzinfo=ET_TIMEZONE), True, False),
-            ("16:00:00 ET (market close)", datetime(2026, 9, 16, 16, 0, 0, tzinfo=ET_TIMEZONE), True, False),
-            ("23:59:00 ET (end of FOMC day)", datetime(2026, 9, 16, 23, 59, 0, tzinfo=ET_TIMEZONE), True, False),
+            (
+                "13:29:59 ET (1s before 30m window)",
+                datetime(2026, 9, 16, 13, 29, 59, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
+            (
+                "13:30:00 ET (start of 30m window)",
+                datetime(2026, 9, 16, 13, 30, 0, tzinfo=ET_TIMEZONE),
+                True,
+                True,
+            ),
+            (
+                "14:00:00 ET (FOMC announcement)",
+                datetime(2026, 9, 16, 14, 0, 0, tzinfo=ET_TIMEZONE),
+                True,
+                True,
+            ),
+            (
+                "14:30:00 ET (end of 30m window)",
+                datetime(2026, 9, 16, 14, 30, 0, tzinfo=ET_TIMEZONE),
+                True,
+                True,
+            ),
+            (
+                "14:30:01 ET (1s after 30m window)",
+                datetime(2026, 9, 16, 14, 30, 1, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
+            (
+                "15:50:00 ET (late afternoon)",
+                datetime(2026, 9, 16, 15, 50, 0, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
+            (
+                "16:00:00 ET (market close)",
+                datetime(2026, 9, 16, 16, 0, 0, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
+            (
+                "23:59:00 ET (end of FOMC day)",
+                datetime(2026, 9, 16, 23, 59, 0, tzinfo=ET_TIMEZONE),
+                True,
+                False,
+            ),
         ]
 
         for desc, dt_et, exp_swing_blocked, exp_intra_blocked in timeline:
@@ -419,7 +504,9 @@ class TestFOMCLockoutSwingVsIntraday:
 
             assert s_blocked == exp_swing_blocked, f"Swing failed at {desc}"
             if exp_swing_blocked:
-                assert s_reason == "FOMC_ALL_DAY_SWING_BLOCK", f"Swing reason mismatch at {desc}: {s_reason}"
+                assert s_reason == "FOMC_ALL_DAY_SWING_BLOCK", (
+                    f"Swing reason mismatch at {desc}: {s_reason}"
+                )
 
             assert i_blocked == exp_intra_blocked, f"Intraday failed at {desc}"
             if exp_intra_blocked:
@@ -432,9 +519,9 @@ class TestFOMCLockoutSwingVsIntraday:
         """The day before and day after FOMC are unaffected for swing strategies."""
         mf = MacroFilter(clock=sim_clock, yaml_path=None, macro_block_minutes=30)
         fomc_utc = datetime(2026, 9, 16, 18, 0, 0, tzinfo=UTC)
-        mf.load_events([
-            {"name": "FOMC", "type": "FOMC", "timestamp": fomc_utc, "impact": "critical"}
-        ])
+        mf.load_events(
+            [{"name": "FOMC", "type": "FOMC", "timestamp": fomc_utc, "impact": "critical"}]
+        )
 
         # Day before at 14:00 ET
         day_before = datetime(2026, 9, 15, 14, 0, 0, tzinfo=ET_TIMEZONE).astimezone(UTC)

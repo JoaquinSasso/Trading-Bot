@@ -124,10 +124,26 @@ class TestBarResamplingAdversarial:
         """Microsecond timestamps must not trigger bucketing anomalies or split boundaries."""
         t_open = datetime(2026, 9, 21, 9, 30, 0, 123456, tzinfo=UTC)
         t_close = datetime(2026, 9, 21, 9, 34, 59, 999999, tzinfo=UTC)
-        df_1m = pd.DataFrame([
-            {"timestamp": t_open, "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5, "volume": 100.0},
-            {"timestamp": t_close, "open": 50.5, "high": 52.0, "low": 50.0, "close": 51.5, "volume": 100.0},
-        ])
+        df_1m = pd.DataFrame(
+            [
+                {
+                    "timestamp": t_open,
+                    "open": 50.0,
+                    "high": 51.0,
+                    "low": 49.0,
+                    "close": 50.5,
+                    "volume": 100.0,
+                },
+                {
+                    "timestamp": t_close,
+                    "open": 50.5,
+                    "high": 52.0,
+                    "low": 50.0,
+                    "close": 51.5,
+                    "volume": 100.0,
+                },
+            ]
+        )
         res = resample_1m_to_5m(df_1m)
         assert len(res) == 1
         assert res.iloc[0]["timestamp"] == pd.Timestamp("2026-09-21 09:35:00+00:00")
@@ -159,15 +175,33 @@ class TestBarResamplingAdversarial:
         assert row["open"] == 100.0
         assert row["close"] == 104.5
         assert row["high"] == 105.0  # minute 4 high
-        assert row["low"] == 99.0   # minute 0 low
+        assert row["low"] == 99.0  # minute 0 low
 
     def test_resample_sub_minute_duplicate_timestamps(self) -> None:
         """Multiple trades/quotes at the exact same minute timestamp must be aggregated seamlessly."""
         t = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
-        df = pd.DataFrame([
-            {"timestamp": t, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 200.0, "vwap": 100.2},
-            {"timestamp": t, "open": 100.5, "high": 102.0, "low": 100.0, "close": 101.5, "volume": 300.0, "vwap": 101.0},
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": t,
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.5,
+                    "volume": 200.0,
+                    "vwap": 100.2,
+                },
+                {
+                    "timestamp": t,
+                    "open": 100.5,
+                    "high": 102.0,
+                    "low": 100.0,
+                    "close": 101.5,
+                    "volume": 300.0,
+                    "vwap": 101.0,
+                },
+            ]
+        )
         res = resample_1m_to_5m(df)
         assert len(res) == 1
         row = res.iloc[0]
@@ -205,15 +239,55 @@ class TestBarResamplingAdversarial:
         base = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
         bars = [
             # minute 0: zero volume
-            {"timestamp": base, "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 0.0, "vwap": 100.0},
+            {
+                "timestamp": base,
+                "open": 100.0,
+                "high": 100.0,
+                "low": 100.0,
+                "close": 100.0,
+                "volume": 0.0,
+                "vwap": 100.0,
+            },
             # minute 1: real trade 1000 shares at 110.0
-            {"timestamp": base + timedelta(minutes=1), "open": 109.0, "high": 111.0, "low": 109.0, "close": 110.0, "volume": 1000.0, "vwap": 110.0},
+            {
+                "timestamp": base + timedelta(minutes=1),
+                "open": 109.0,
+                "high": 111.0,
+                "low": 109.0,
+                "close": 110.0,
+                "volume": 1000.0,
+                "vwap": 110.0,
+            },
             # minute 2: zero volume
-            {"timestamp": base + timedelta(minutes=2), "open": 110.0, "high": 110.0, "low": 110.0, "close": 110.0, "volume": 0.0, "vwap": 110.0},
+            {
+                "timestamp": base + timedelta(minutes=2),
+                "open": 110.0,
+                "high": 110.0,
+                "low": 110.0,
+                "close": 110.0,
+                "volume": 0.0,
+                "vwap": 110.0,
+            },
             # minute 3: real trade 1000 shares at 120.0
-            {"timestamp": base + timedelta(minutes=3), "open": 119.0, "high": 121.0, "low": 119.0, "close": 120.0, "volume": 1000.0, "vwap": 120.0},
+            {
+                "timestamp": base + timedelta(minutes=3),
+                "open": 119.0,
+                "high": 121.0,
+                "low": 119.0,
+                "close": 120.0,
+                "volume": 1000.0,
+                "vwap": 120.0,
+            },
             # minute 4: zero volume
-            {"timestamp": base + timedelta(minutes=4), "open": 120.0, "high": 120.0, "low": 120.0, "close": 120.0, "volume": 0.0, "vwap": 120.0},
+            {
+                "timestamp": base + timedelta(minutes=4),
+                "open": 120.0,
+                "high": 120.0,
+                "low": 120.0,
+                "close": 120.0,
+                "volume": 0.0,
+                "vwap": 120.0,
+            },
         ]
         res = resample_1m_to_5m(pd.DataFrame(bars))
         assert len(res) == 1
@@ -227,17 +301,21 @@ class TestBarResamplingAdversarial:
         """A single 1m bar at minute 0, 2, or 4 of a 5m interval must properly label at bucket close."""
         base = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
         bar_time = base + timedelta(minutes=minute_offset)
-        df = pd.DataFrame([{
-            "timestamp": bar_time,
-            "symbol": "SPY",
-            "open": 500.0,
-            "high": 502.0,
-            "low": 499.0,
-            "close": 501.0,
-            "volume": 450.0,
-            "vwap": 500.8,
-            "trade_count": 15,
-        }])
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": bar_time,
+                    "symbol": "SPY",
+                    "open": 500.0,
+                    "high": 502.0,
+                    "low": 499.0,
+                    "close": 501.0,
+                    "volume": 450.0,
+                    "vwap": 500.8,
+                    "trade_count": 15,
+                }
+            ]
+        )
         res = resample_1m_to_5m(df)
         assert len(res) == 1
         row = res.iloc[0]
@@ -255,10 +333,26 @@ class TestBarResamplingAdversarial:
         """Pre-market bar at 09:29:59 must land in 09:30:00 bucket, while 09:30:00 must start 09:35:00 bucket."""
         pre_market_time = datetime(2026, 9, 21, 9, 29, 59, tzinfo=UTC)
         market_open_time = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
-        df = pd.DataFrame([
-            {"timestamp": pre_market_time, "open": 99.0, "high": 99.5, "low": 98.5, "close": 99.2, "volume": 100.0},
-            {"timestamp": market_open_time, "open": 100.0, "high": 102.0, "low": 99.8, "close": 101.5, "volume": 500.0},
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": pre_market_time,
+                    "open": 99.0,
+                    "high": 99.5,
+                    "low": 98.5,
+                    "close": 99.2,
+                    "volume": 100.0,
+                },
+                {
+                    "timestamp": market_open_time,
+                    "open": 100.0,
+                    "high": 102.0,
+                    "low": 99.8,
+                    "close": 101.5,
+                    "volume": 500.0,
+                },
+            ]
+        )
         res = resample_1m_to_5m(df)
         assert len(res) == 2
         # Bar 1: pre-market lands in 09:30:00
@@ -272,11 +366,27 @@ class TestBarResamplingAdversarial:
         """Bars from 15:55:00 to 15:59:59 form the 16:00:00 bar, while 16:00:00 forms the 16:05:00 post-market bar."""
         base = datetime(2026, 9, 21, 15, 55, 0, tzinfo=UTC)
         bars = [
-            {"timestamp": base + timedelta(minutes=i), "open": 100.0 + i, "high": 101.0 + i, "low": 99.0 + i, "close": 100.5 + i, "volume": 100.0}
+            {
+                "timestamp": base + timedelta(minutes=i),
+                "open": 100.0 + i,
+                "high": 101.0 + i,
+                "low": 99.0 + i,
+                "close": 100.5 + i,
+                "volume": 100.0,
+            }
             for i in range(5)  # 15:55, 15:56, 15:57, 15:58, 15:59
         ]
         # Add auction bar at exactly 16:00:00
-        bars.append({"timestamp": datetime(2026, 9, 21, 16, 0, 0, tzinfo=UTC), "open": 105.0, "high": 105.0, "low": 105.0, "close": 105.0, "volume": 10000.0})
+        bars.append(
+            {
+                "timestamp": datetime(2026, 9, 21, 16, 0, 0, tzinfo=UTC),
+                "open": 105.0,
+                "high": 105.0,
+                "low": 105.0,
+                "close": 105.0,
+                "volume": 10000.0,
+            }
+        )
 
         res = resample_1m_to_5m(pd.DataFrame(bars))
         assert len(res) == 2
@@ -295,10 +405,24 @@ class TestBarResamplingAdversarial:
         base = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
         bars = [
             # 09:30-09:34 (Bucket 09:35)
-            {"timestamp": base, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 100.0},
+            {
+                "timestamp": base,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 100.0,
+            },
             # Complete 30-min gap (missing 09:40, 09:45, 09:50, 09:55, 10:00)
             # 10:00-10:04 (Bucket 10:05)
-            {"timestamp": base + timedelta(minutes=30), "open": 105.0, "high": 106.0, "low": 104.0, "close": 105.5, "volume": 200.0},
+            {
+                "timestamp": base + timedelta(minutes=30),
+                "open": 105.0,
+                "high": 106.0,
+                "low": 104.0,
+                "close": 105.5,
+                "volume": 200.0,
+            },
         ]
         res = resample_1m_to_5m(pd.DataFrame(bars), fill_missing=False)
         assert len(res) == 2
@@ -311,9 +435,23 @@ class TestBarResamplingAdversarial:
         base = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
         bars = [
             # Bucket 09:35
-            {"timestamp": base, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 100.0},
+            {
+                "timestamp": base,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 100.0,
+            },
             # 30-minute halt/gap: resumes at 10:00 (Bucket 10:05)
-            {"timestamp": base + timedelta(minutes=30), "open": 105.0, "high": 106.0, "low": 104.0, "close": 105.5, "volume": 200.0},
+            {
+                "timestamp": base + timedelta(minutes=30),
+                "open": 105.0,
+                "high": 106.0,
+                "low": 104.0,
+                "close": 105.5,
+                "volume": 200.0,
+            },
         ]
         res = resample_1m_to_5m(pd.DataFrame(bars), fill_missing=True)
         # Expected buckets: 09:35, 09:40, 09:45, 09:50, 09:55, 10:00, 10:05 -> 7 bars total
@@ -345,7 +483,16 @@ class TestBarResamplingAdversarial:
     def test_resample_multi_bar_gaps_explicit_expected_index(self) -> None:
         """Providing an expected_index forces the exact requested timestamps and forward-fills gaps."""
         base = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
-        bars = [{"timestamp": base, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 100.0}]
+        bars = [
+            {
+                "timestamp": base,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 100.0,
+            }
+        ]
         df = pd.DataFrame(bars)
 
         expected = pd.date_range("2026-09-21 09:35:00", periods=4, freq="5min", tz="UTC")
@@ -421,15 +568,17 @@ class TestBarResamplingAdversarial:
         bars = []
         for sym, p_base in [("SPY", 500.0), ("QQQ", 450.0), ("GLD", 200.0)]:
             for i in range(5):
-                bars.append({
-                    "timestamp": base + timedelta(minutes=i),
-                    "symbol": sym,
-                    "open": p_base + i,
-                    "high": p_base + i + 1.0,
-                    "low": p_base + i - 1.0,
-                    "close": p_base + i + 0.5,
-                    "volume": 100.0,
-                })
+                bars.append(
+                    {
+                        "timestamp": base + timedelta(minutes=i),
+                        "symbol": sym,
+                        "open": p_base + i,
+                        "high": p_base + i + 1.0,
+                        "low": p_base + i - 1.0,
+                        "close": p_base + i + 0.5,
+                        "volume": 100.0,
+                    }
+                )
         res = aggregate_1m_to_5m(pd.DataFrame(bars))
         assert len(res) == 3
         symbols = list(res["symbol"])
@@ -443,9 +592,18 @@ class TestBarResamplingAdversarial:
 
     def test_resample_tz_naive_and_string_timestamps(self) -> None:
         """Resampler must cleanly convert ISO-string timestamps and tz-naive indices to UTC."""
-        df_str = pd.DataFrame([
-            {"timestamp": "2026-09-21 09:30:00", "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5, "volume": 100.0}
-        ])
+        df_str = pd.DataFrame(
+            [
+                {
+                    "timestamp": "2026-09-21 09:30:00",
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.5,
+                    "volume": 100.0,
+                }
+            ]
+        )
         res_str = resample_1m_to_5m(df_str)
         assert res_str.iloc[0]["timestamp"] == pd.Timestamp("2026-09-21 09:35:00+00:00")
 
@@ -472,7 +630,9 @@ class TestDailyBarCacheAdversarial:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        session_factory = async_sessionmaker(
+            bind=engine, class_=AsyncSession, expire_on_commit=False
+        )
         cache = DailyBarCache(session_factory=session_factory)
 
         identical_bar = {
@@ -513,7 +673,9 @@ class TestDailyBarCacheAdversarial:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        session_factory = async_sessionmaker(
+            bind=engine, class_=AsyncSession, expire_on_commit=False
+        )
         cache = DailyBarCache(session_factory=session_factory)
 
         base_date = date(2026, 1, 1)
@@ -536,7 +698,9 @@ class TestDailyBarCacheAdversarial:
             return await cache.store_bars(bars)
 
         # 10 workers with overlapping offsets (0, 3, 6, ..., 27). Total unique days: 20 + 27 = 47 days.
-        results = await asyncio.gather(*(write_window(i * 3) for i in range(10)), return_exceptions=True)
+        results = await asyncio.gather(
+            *(write_window(i * 3) for i in range(10)), return_exceptions=True
+        )
         assert not any(isinstance(r, Exception) for r in results)
 
         async with session_factory() as session:
@@ -550,7 +714,7 @@ class TestDailyBarCacheAdversarial:
     def test_multi_week_missing_ranges_efficient_bridging(self) -> None:
         """find_missing_date_ranges must bridge weekends and short breaks to collapse multi-week queries into minimal ranges."""
         start = date(2026, 1, 5)  # Monday
-        end = date(2026, 3, 27)    # Friday (12 full weeks = 60 weekdays)
+        end = date(2026, 3, 27)  # Friday (12 full weeks = 60 weekdays)
 
         cache = DailyBarCache()
         # Weeks 1, 6, and 12 are cached
@@ -568,32 +732,38 @@ class TestDailyBarCacheAdversarial:
 
         r1_start, r1_end = missing_ranges[0]
         assert r1_start == date(2026, 1, 12)  # Monday Week 2
-        assert r1_end == date(2026, 2, 6)    # Friday Week 5
+        assert r1_end == date(2026, 2, 6)  # Friday Week 5
 
         r2_start, r2_end = missing_ranges[1]
         assert r2_start == date(2026, 2, 16)  # Monday Week 7
-        assert r2_end == date(2026, 3, 20)   # Friday Week 11
+        assert r2_end == date(2026, 3, 20)  # Friday Week 11
 
     @pytest.mark.asyncio
     async def test_database_disconnect_read_fallback(self) -> None:
         """If the database throws an OperationalError during read, cache must catch, rollback, and fetch live data directly."""
         cache = DailyBarCache()
         broken_session = MagicMock(spec=AsyncSession)
-        broken_session.scalars = AsyncMock(side_effect=OperationalError("Connection dropped by peer", params={}, orig=Exception()))
+        broken_session.scalars = AsyncMock(
+            side_effect=OperationalError("Connection dropped by peer", params={}, orig=Exception())
+        )
         broken_session.rollback = AsyncMock()
 
-        async def live_fetch(symbols: list[str], start: date, end: date, feed: str, adjusted: bool) -> list[dict[str, Any]]:
-            return [{
-                "symbol": "SPY",
-                "date": date(2026, 1, 5),
-                "open": 500.0,
-                "high": 505.0,
-                "low": 498.0,
-                "close": 502.0,
-                "volume": 1000000,
-                "adjusted": adjusted,
-                "feed": feed,
-            }]
+        async def live_fetch(
+            symbols: list[str], start: date, end: date, feed: str, adjusted: bool
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "SPY",
+                    "date": date(2026, 1, 5),
+                    "open": 500.0,
+                    "high": 505.0,
+                    "low": 498.0,
+                    "close": 502.0,
+                    "volume": 1000000,
+                    "adjusted": adjusted,
+                    "feed": feed,
+                }
+            ]
 
         df = await cache.get_or_fetch_daily_bars(
             symbols=["SPY"],
@@ -617,22 +787,30 @@ class TestDailyBarCacheAdversarial:
         scalars_result.all.return_value = []
         mock_session.scalars = AsyncMock(return_value=scalars_result)
         # Write fails
-        mock_session.execute = AsyncMock(side_effect=OperationalError("Disk full / connection terminated", params={}, orig=Exception()))
+        mock_session.execute = AsyncMock(
+            side_effect=OperationalError(
+                "Disk full / connection terminated", params={}, orig=Exception()
+            )
+        )
         mock_session.rollback = AsyncMock()
         mock_session.get_bind.return_value.dialect.name = "sqlite"
 
-        async def live_fetch(symbols: list[str], start: date, end: date, feed: str, adjusted: bool) -> list[dict[str, Any]]:
-            return [{
-                "symbol": "GLD",
-                "date": date(2026, 1, 5),
-                "open": 180.0,
-                "high": 182.0,
-                "low": 179.0,
-                "close": 181.0,
-                "volume": 200000,
-                "adjusted": adjusted,
-                "feed": feed,
-            }]
+        async def live_fetch(
+            symbols: list[str], start: date, end: date, feed: str, adjusted: bool
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "GLD",
+                    "date": date(2026, 1, 5),
+                    "open": 180.0,
+                    "high": 182.0,
+                    "low": 179.0,
+                    "close": 181.0,
+                    "volume": 200000,
+                    "adjusted": adjusted,
+                    "feed": feed,
+                }
+            ]
 
         df = await cache.get_or_fetch_daily_bars(
             symbols=["GLD"],
@@ -651,18 +829,22 @@ class TestDailyBarCacheAdversarial:
         """When neither session nor session_factory is provided, cache must log warning and fetch without crashing."""
         cache = DailyBarCache(session_factory=None)
 
-        async def fetch(symbols: list[str], start: date, end: date, feed: str, adjusted: bool) -> list[dict[str, Any]]:
-            return [{
-                "symbol": "AAPL",
-                "date": date(2026, 1, 5),
-                "open": 150.0,
-                "high": 152.0,
-                "low": 149.0,
-                "close": 151.0,
-                "volume": 500000,
-                "adjusted": adjusted,
-                "feed": feed,
-            }]
+        async def fetch(
+            symbols: list[str], start: date, end: date, feed: str, adjusted: bool
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "AAPL",
+                    "date": date(2026, 1, 5),
+                    "open": 150.0,
+                    "high": 152.0,
+                    "low": 149.0,
+                    "close": 151.0,
+                    "volume": 500000,
+                    "adjusted": adjusted,
+                    "feed": feed,
+                }
+            ]
 
         df = await cache.get_or_fetch_daily_bars(
             symbols=["AAPL"],
@@ -680,31 +862,68 @@ class TestDailyBarCacheAdversarial:
         cache = DailyBarCache()
 
         # Pre-seed database: SPY has Jan 5 and Jan 6; QQQ has only Jan 5; GLD has nothing
-        await cache.save_bars(test_session, [
-            {"symbol": "SPY", "date": date(2026, 1, 5), "open": 500, "high": 505, "low": 495, "close": 500, "volume": 100, "adjusted": True, "feed": "sip_delayed"},
-            {"symbol": "SPY", "date": date(2026, 1, 6), "open": 502, "high": 507, "low": 497, "close": 502, "volume": 100, "adjusted": True, "feed": "sip_delayed"},
-            {"symbol": "QQQ", "date": date(2026, 1, 5), "open": 400, "high": 405, "low": 395, "close": 400, "volume": 100, "adjusted": True, "feed": "sip_delayed"},
-        ])
+        await cache.save_bars(
+            test_session,
+            [
+                {
+                    "symbol": "SPY",
+                    "date": date(2026, 1, 5),
+                    "open": 500,
+                    "high": 505,
+                    "low": 495,
+                    "close": 500,
+                    "volume": 100,
+                    "adjusted": True,
+                    "feed": "sip_delayed",
+                },
+                {
+                    "symbol": "SPY",
+                    "date": date(2026, 1, 6),
+                    "open": 502,
+                    "high": 507,
+                    "low": 497,
+                    "close": 502,
+                    "volume": 100,
+                    "adjusted": True,
+                    "feed": "sip_delayed",
+                },
+                {
+                    "symbol": "QQQ",
+                    "date": date(2026, 1, 5),
+                    "open": 400,
+                    "high": 405,
+                    "low": 395,
+                    "close": 400,
+                    "volume": 100,
+                    "adjusted": True,
+                    "feed": "sip_delayed",
+                },
+            ],
+        )
 
         fetched_calls: list[tuple[list[str], date, date]] = []
 
-        async def mock_fetch(symbols: list[str], start: date, end: date, feed: str, adjusted: bool) -> list[dict[str, Any]]:
+        async def mock_fetch(
+            symbols: list[str], start: date, end: date, feed: str, adjusted: bool
+        ) -> list[dict[str, Any]]:
             fetched_calls.append((symbols, start, end))
             results = []
             for s in symbols:
                 cur = start
                 while cur <= end:
-                    results.append({
-                        "symbol": s,
-                        "date": cur,
-                        "open": 100.0,
-                        "high": 105.0,
-                        "low": 95.0,
-                        "close": 100.0,
-                        "volume": 500.0,
-                        "adjusted": adjusted,
-                        "feed": feed,
-                    })
+                    results.append(
+                        {
+                            "symbol": s,
+                            "date": cur,
+                            "open": 100.0,
+                            "high": 105.0,
+                            "low": 95.0,
+                            "close": 100.0,
+                            "volume": 500.0,
+                            "adjusted": adjusted,
+                            "feed": feed,
+                        }
+                    )
                     cur += timedelta(days=1)
             return results
 
@@ -735,14 +954,49 @@ class TestDailyBarCacheAdversarial:
         """save_bars must accept date as ISO string, datetime.date, pd.Timestamp, and datetime.datetime."""
         cache = DailyBarCache()
         bars = [
-            {"symbol": "SPY", "date": "2026-01-05", "open": 500, "high": 505, "low": 495, "close": 500, "volume": 100, "adjusted": True, "feed": "sip_delayed"},
-            {"symbol": "QQQ", "date": date(2026, 1, 5), "open": 400, "high": 405, "low": 395, "close": 400, "volume": 100, "adjusted": True, "feed": "sip_delayed"},
-            {"symbol": "GLD", "date": pd.Timestamp("2026-01-05"), "open": 180, "high": 185, "low": 175, "close": 180, "volume": 100, "adjusted": True, "feed": "sip_delayed"},
+            {
+                "symbol": "SPY",
+                "date": "2026-01-05",
+                "open": 500,
+                "high": 505,
+                "low": 495,
+                "close": 500,
+                "volume": 100,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            },
+            {
+                "symbol": "QQQ",
+                "date": date(2026, 1, 5),
+                "open": 400,
+                "high": 405,
+                "low": 395,
+                "close": 400,
+                "volume": 100,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            },
+            {
+                "symbol": "GLD",
+                "date": pd.Timestamp("2026-01-05"),
+                "open": 180,
+                "high": 185,
+                "low": 175,
+                "close": 180,
+                "volume": 100,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            },
         ]
         saved = await cache.save_bars(test_session, bars)
         assert saved == 3
 
-        df = await cache.get_bars(symbols=["SPY", "QQQ", "GLD"], start=date(2026, 1, 1), end=date(2026, 1, 10), session=test_session)
+        df = await cache.get_bars(
+            symbols=["SPY", "QQQ", "GLD"],
+            start=date(2026, 1, 1),
+            end=date(2026, 1, 10),
+            session=test_session,
+        )
         assert len(df) == 3
         assert set(df["symbol"]) == {"SPY", "QQQ", "GLD"}
 
@@ -772,10 +1026,40 @@ class TestDailyBarCacheAdversarial:
         """_to_dataframe must eliminate duplicate (symbol, date) pairs and guarantee deterministic sorting."""
         cache = DailyBarCache()
         records = [
-            {"symbol": "SPY", "date": date(2026, 1, 6), "open": 502, "high": 507, "low": 501, "close": 506, "volume": 1000, "adjusted": True, "feed": "sip_delayed"},
-            {"symbol": "SPY", "date": date(2026, 1, 5), "open": 500, "high": 505, "low": 498, "close": 502, "volume": 900, "adjusted": True, "feed": "sip_delayed"},
+            {
+                "symbol": "SPY",
+                "date": date(2026, 1, 6),
+                "open": 502,
+                "high": 507,
+                "low": 501,
+                "close": 506,
+                "volume": 1000,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            },
+            {
+                "symbol": "SPY",
+                "date": date(2026, 1, 5),
+                "open": 500,
+                "high": 505,
+                "low": 498,
+                "close": 502,
+                "volume": 900,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            },
             # Duplicate update for Jan 5 with newer volume
-            {"symbol": "SPY", "date": date(2026, 1, 5), "open": 500, "high": 505, "low": 498, "close": 502, "volume": 1500, "adjusted": True, "feed": "sip_delayed"},
+            {
+                "symbol": "SPY",
+                "date": date(2026, 1, 5),
+                "open": 500,
+                "high": 505,
+                "low": 498,
+                "close": 502,
+                "volume": 1500,
+                "adjusted": True,
+                "feed": "sip_delayed",
+            },
         ]
         df = cache._to_dataframe(records)
         assert len(df) == 2
@@ -785,17 +1069,25 @@ class TestDailyBarCacheAdversarial:
 
     def test_postgresql_dialect_on_conflict_compilation(self) -> None:
         """Verify PostgreSQL on_conflict_do_nothing compilation targets the (symbol, date, feed) unique constraint."""
-        stmt = pg_insert(DailyBar).values([{
-            "symbol": "SPY",
-            "date": date(2026, 1, 5),
-            "open": 500.0,
-            "high": 505.0,
-            "low": 495.0,
-            "close": 500.0,
-            "volume": 1000,
-            "adjusted": True,
-            "feed": "sip_delayed",
-        }]).on_conflict_do_nothing(index_elements=["symbol", "date", "feed"])
+        stmt = (
+            pg_insert(DailyBar)
+            .values(
+                [
+                    {
+                        "symbol": "SPY",
+                        "date": date(2026, 1, 5),
+                        "open": 500.0,
+                        "high": 505.0,
+                        "low": 495.0,
+                        "close": 500.0,
+                        "volume": 1000,
+                        "adjusted": True,
+                        "feed": "sip_delayed",
+                    }
+                ]
+            )
+            .on_conflict_do_nothing(index_elements=["symbol", "date", "feed"])
+        )
 
         compiled = str(stmt.compile(dialect=postgresql.dialect()))
         assert "ON CONFLICT (symbol, date, feed) DO NOTHING" in compiled
@@ -809,16 +1101,19 @@ class TestDailyBarCacheAdversarial:
 class TestProxyMappingAdversarial:
     """Adversarial stress testing of ETF proxy mapping and mathematical invariances."""
 
-    @pytest.mark.parametrize("raw_input, expected_trading, expected_data", [
-        ("  SPY  ", "SPYM", "SPY"),
-        ("\tspym\n", "SPYM", "SPY"),
-        ("  qqq\r\n", "QQQM", "QQQ"),
-        ("\tQQQM\t", "QQQM", "QQQ"),
-        ("  gld  ", "GLDM", "GLD"),
-        ("  GLDM  ", "GLDM", "GLD"),
-        ("   ", "", ""),
-        ("", "", ""),
-    ])
+    @pytest.mark.parametrize(
+        "raw_input, expected_trading, expected_data",
+        [
+            ("  SPY  ", "SPYM", "SPY"),
+            ("\tspym\n", "SPYM", "SPY"),
+            ("  qqq\r\n", "QQQM", "QQQ"),
+            ("\tQQQM\t", "QQQM", "QQQ"),
+            ("  gld  ", "GLDM", "GLD"),
+            ("  GLDM  ", "GLDM", "GLD"),
+            ("   ", "", ""),
+            ("", "", ""),
+        ],
+    )
     def test_proxy_whitespace_and_casing_resilience(
         self, raw_input: str, expected_trading: str, expected_data: str
     ) -> None:
@@ -826,16 +1121,19 @@ class TestProxyMappingAdversarial:
         assert resolve_trading_proxy(raw_input) == expected_trading
         assert resolve_data_proxy(raw_input) == expected_data
 
-    @pytest.mark.parametrize("ticker", [
-        "BRK.B",
-        "BRK/B",
-        "BF.B",
-        "BTC/USD",
-        "EURUSD=X",
-        "3M",
-        "T-PR-A",
-        "0005.HK",
-    ])
+    @pytest.mark.parametrize(
+        "ticker",
+        [
+            "BRK.B",
+            "BRK/B",
+            "BF.B",
+            "BTC/USD",
+            "EURUSD=X",
+            "3M",
+            "T-PR-A",
+            "0005.HK",
+        ],
+    )
     def test_proxy_non_standard_tickers_identity(self, ticker: str) -> None:
         """Non-canonical symbols with special characters or numbers must resolve to themselves without crashing."""
         assert resolve_trading_proxy(ticker) == ticker
@@ -851,9 +1149,9 @@ class TestProxyMappingAdversarial:
         recovered_canonical = resolve_data_proxy(trading_proxy)
         assert recovered_canonical == canonical_symbol
 
-    @pytest.mark.parametrize("symbol", [
-        "SPY", "SPYM", "QQQ", "QQQM", "GLD", "GLDM", "AAPL", "MSFT", "NVDA", "BRK.B", ""
-    ])
+    @pytest.mark.parametrize(
+        "symbol", ["SPY", "SPYM", "QQQ", "QQQM", "GLD", "GLDM", "AAPL", "MSFT", "NVDA", "BRK.B", ""]
+    )
     def test_proxy_idempotency_trading_and_data(self, symbol: str) -> None:
         """Invariance 2 & 3: resolve_trading(resolve_trading(x)) == resolve_trading(x) and resolve_data(resolve_data(x)) == resolve_data(x)."""
         t1 = resolve_trading_proxy(symbol)
@@ -886,14 +1184,16 @@ class TestProxyMappingAdversarial:
     @pytest.mark.asyncio
     async def test_proxy_db_sync_whitespace_and_casing(self, test_session: AsyncSession) -> None:
         """ProxyMapper.sync_from_db must tolerate unnormalized whitespace and casing in database records."""
-        test_session.add(UniverseSymbol(
-            signal_symbol="  iwm  ",
-            execution_symbol="  iwmm  ",
-            cluster="small_cap",
-            enabled=True,
-            notes="Messy casing and whitespace",
-            updated_at=datetime(2026, 9, 19, 12, 0, 0, tzinfo=UTC),
-        ))
+        test_session.add(
+            UniverseSymbol(
+                signal_symbol="  iwm  ",
+                execution_symbol="  iwmm  ",
+                cluster="small_cap",
+                enabled=True,
+                notes="Messy casing and whitespace",
+                updated_at=datetime(2026, 9, 19, 12, 0, 0, tzinfo=UTC),
+            )
+        )
         await test_session.commit()
 
         mapper = ProxyMapper()

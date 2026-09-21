@@ -63,7 +63,9 @@ class TestGlobalFeedMonitorStateMachine:
         assert allowed is True
         assert reason == "OK"
 
-    def test_transition_healthy_to_degraded_at_60s_boundary(self, sim_clock: SimulatedClock) -> None:
+    def test_transition_healthy_to_degraded_at_60s_boundary(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         monitor = GlobalFeedMonitor(clock=sim_clock, enforce_market_hours=False)
         monitor.record_message()
 
@@ -234,7 +236,12 @@ class TestSymbolFreshnessAndCalibration:
         assert reason == "NO_DATA"
 
         # Registrar cotización fresca (hace 100s)
-        quote = PriceQuote(symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=now - timedelta(seconds=100))
+        quote = PriceQuote(
+            symbol="SPY",
+            bid=Decimal("500.00"),
+            ask=Decimal("500.10"),
+            timestamp=now - timedelta(seconds=100),
+        )
         monitor.record_quote("SPY", quote)
 
         is_fresh, reason = monitor.check_symbol_freshness("SPY")
@@ -259,7 +266,10 @@ class TestSymbolFreshnessAndCalibration:
     def test_exchange_halt_status_handling(self, sim_clock: SimulatedClock) -> None:
         monitor = SymbolFreshnessMonitor(clock=sim_clock)
         now = sim_clock.now()
-        monitor.record_quote("SPY", PriceQuote(symbol="SPY", bid=Decimal("500"), ask=Decimal("500.10"), timestamp=now))
+        monitor.record_quote(
+            "SPY",
+            PriceQuote(symbol="SPY", bid=Decimal("500"), ask=Decimal("500.10"), timestamp=now),
+        )
 
         # Estado T (Trading) -> permitido
         monitor.record_exchange_status("SPY", "T")
@@ -302,7 +312,9 @@ class TestStrictEntryPricingPolicy:
         bid = Decimal("500.00")
         ask = Decimal("500.25")
         mid = Decimal("500.125")
-        quote = PriceQuote(symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=5.0, timestamp=now)
+        quote = PriceQuote(
+            symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=5.0, timestamp=now
+        )
         trade = TradeQuote(symbol="SPY", price=Decimal("500.10"), timestamp=now)
 
         price, mode = guard.get_entry_price(quote, trade, tau)
@@ -320,14 +332,18 @@ class TestStrictEntryPricingPolicy:
         bid = Decimal("500.00")
         ask = Decimal("500.50")
         mid = Decimal("500.25")
-        quote = PriceQuote(symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=10.0, timestamp=now)
+        quote = PriceQuote(
+            symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=10.0, timestamp=now
+        )
         trade = TradeQuote(symbol="SPY", price=Decimal("500.20"), timestamp=now)
 
         price, mode = guard.get_entry_price(quote, trade, tau)
         assert price == mid
         assert mode == "MIDPOINT"
 
-    def test_spread_above_10bps_falls_through_to_last_trade(self, sim_clock: SimulatedClock) -> None:
+    def test_spread_above_10bps_falls_through_to_last_trade(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock)
         now = sim_clock.now()
         tau = timedelta(seconds=180)
@@ -342,7 +358,9 @@ class TestStrictEntryPricingPolicy:
         assert price == Decimal("500.30")
         assert mode == "LAST_TRADE"
 
-    def test_stale_quote_with_fresh_trade_selects_last_trade(self, sim_clock: SimulatedClock) -> None:
+    def test_stale_quote_with_fresh_trade_selects_last_trade(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock)
         now = sim_clock.now()
         tau = timedelta(seconds=180)
@@ -356,21 +374,33 @@ class TestStrictEntryPricingPolicy:
             timestamp=now - timedelta(seconds=200),
         )
         # Trade fresco (30s de antigüedad)
-        trade = TradeQuote(symbol="SPY", price=Decimal("500.05"), timestamp=now - timedelta(seconds=30))
+        trade = TradeQuote(
+            symbol="SPY", price=Decimal("500.05"), timestamp=now - timedelta(seconds=30)
+        )
 
         price, mode = guard.get_entry_price(quote, trade, tau)
         assert price == Decimal("500.05")
         assert mode == "LAST_TRADE"
 
-    def test_wide_spread_and_stale_trade_discards_with_stale_price(self, sim_clock: SimulatedClock) -> None:
+    def test_wide_spread_and_stale_trade_discards_with_stale_price(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock)
         now = sim_clock.now()
         tau = timedelta(seconds=180)
 
         # Quote con spread 25 bps (ancho)
-        quote = PriceQuote(symbol="SPY", bid=Decimal("500.00"), ask=Decimal("501.25"), spread_bps=25.0, timestamp=now)
+        quote = PriceQuote(
+            symbol="SPY",
+            bid=Decimal("500.00"),
+            ask=Decimal("501.25"),
+            spread_bps=25.0,
+            timestamp=now,
+        )
         # Trade viejo (250s > 180s)
-        trade = TradeQuote(symbol="SPY", price=Decimal("500.50"), timestamp=now - timedelta(seconds=250))
+        trade = TradeQuote(
+            symbol="SPY", price=Decimal("500.50"), timestamp=now - timedelta(seconds=250)
+        )
 
         initial_discards = guard.discard_counts["STALE_PRICE"]
         price, mode = guard.get_entry_price(quote, trade, tau)
@@ -378,7 +408,9 @@ class TestStrictEntryPricingPolicy:
         assert mode == "STALE_PRICE"
         assert guard.discard_counts["STALE_PRICE"] == initial_discards + 1
 
-    def test_both_quote_and_trade_stale_discards_with_stale_price(self, sim_clock: SimulatedClock) -> None:
+    def test_both_quote_and_trade_stale_discards_with_stale_price(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock)
         now = sim_clock.now()
         tau = timedelta(seconds=180)
@@ -390,7 +422,9 @@ class TestStrictEntryPricingPolicy:
             spread_bps=1.0,
             timestamp=now - timedelta(seconds=300),
         )
-        trade = TradeQuote(symbol="SPY", price=Decimal("500.02"), timestamp=now - timedelta(seconds=300))
+        trade = TradeQuote(
+            symbol="SPY", price=Decimal("500.02"), timestamp=now - timedelta(seconds=300)
+        )
 
         price, mode = guard.get_entry_price(quote, trade, tau)
         assert price is None
@@ -435,7 +469,9 @@ class TestStrictEntryPricingPolicy:
         guard = StalenessGuard(clock=sim_clock)
         tau = timedelta(seconds=180)
 
-        quote = PriceQuote(symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=None)
+        quote = PriceQuote(
+            symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=None
+        )
         trade = TradeQuote(symbol="SPY", price=Decimal("500.05"), timestamp=None)
 
         price, mode = guard.get_entry_price(quote, trade, tau)
@@ -478,7 +514,10 @@ class TestUnifiedStalenessGuardFacade:
 
         # Registrar cotización fresca para SPY -> permitido
         now = sim_clock.now()
-        guard.record_quote("SPY", PriceQuote(symbol="SPY", bid=Decimal("500"), ask=Decimal("500.10"), timestamp=now))
+        guard.record_quote(
+            "SPY",
+            PriceQuote(symbol="SPY", bid=Decimal("500"), ask=Decimal("500.10"), timestamp=now),
+        )
         assert guard.is_entry_allowed("SPY") == (True, "OK")
 
         # Poner símbolo en halt -> bloqueado
@@ -516,22 +555,30 @@ class TestUnifiedStalenessGuardFacade:
         # Simular salto en el tiempo de 90s (feed global degradado)
         sim_clock.advance(timedelta(seconds=90))
 
-        quote = PriceQuote(symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=now)
+        quote = PriceQuote(
+            symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=now
+        )
         trade = TradeQuote(symbol="SPY", price=Decimal("500.05"), timestamp=now)
 
-        price, is_valid, reason = guard.validate_entry("SPY", quote, trade, Decimal("500.00"), Decimal("1.00"))
+        price, is_valid, reason = guard.validate_entry(
+            "SPY", quote, trade, Decimal("500.00"), Decimal("1.00")
+        )
         assert is_valid is False
         assert price is None
         assert reason == "FEED_DEGRADED"
 
-    def test_validate_entry_or_raise_raises_stale_data_error(self, sim_clock: SimulatedClock) -> None:
+    def test_validate_entry_or_raise_raises_stale_data_error(
+        self, sim_clock: SimulatedClock
+    ) -> None:
         guard = StalenessGuard(clock=sim_clock, enforce_market_hours=False)
         guard.record_message()
         now = sim_clock.now()
 
         # Quote y trade viejos (400s > tau 300s)
         stale_time = now - timedelta(seconds=400)
-        quote = PriceQuote(symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=stale_time)
+        quote = PriceQuote(
+            symbol="SPY", bid=Decimal("500.00"), ask=Decimal("500.10"), timestamp=stale_time
+        )
         trade = TradeQuote(symbol="SPY", price=Decimal("500.05"), timestamp=stale_time)
 
         with pytest.raises(StaleDataError) as exc_info:

@@ -177,7 +177,9 @@ class NewsArticle(Base):
     url: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
     headline: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     finbert_label: Mapped[str | None] = mapped_column(String(16), nullable=True)
     finbert_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     whitelisted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -212,7 +214,9 @@ class SignalRecord(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
     variant: Mapped[str] = mapped_column(String(32), default="A", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
 
 
 class LLMCall(Base):
@@ -230,7 +234,9 @@ class LLMCall(Base):
     tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
 
 
 class VetoDecision(Base):
@@ -284,7 +290,9 @@ class OrderRecord(Base):
     stop_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    filled_qty: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"), nullable=False)
+    filled_qty: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4), default=Decimal("0"), nullable=False
+    )
     avg_fill_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
 
 
@@ -322,7 +330,9 @@ class TradeRecord(Base):
     pnl: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     pnl_r: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     fees_est: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=Decimal("0"), nullable=False)
-    slippage_est: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=Decimal("0"), nullable=False)
+    slippage_est: Mapped[Decimal] = mapped_column(
+        Numeric(8, 2), default=Decimal("0"), nullable=False
+    )
     exit_reason: Mapped[str] = mapped_column(String(64), nullable=False)
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -354,7 +364,9 @@ class Intent(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -366,7 +378,9 @@ class Approval(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     request: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -391,7 +405,9 @@ class ReportRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     period: Mapped[str] = mapped_column(String(16), nullable=False)
-    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    period_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     content_md: Mapped[str] = mapped_column(Text, nullable=False)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -418,4 +434,6 @@ class AuditLog(Base):
     actor: Mapped[str] = mapped_column(String(64), nullable=False)
     action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )

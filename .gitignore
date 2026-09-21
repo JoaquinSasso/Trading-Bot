@@ -41,8 +41,12 @@ htmlcov/
 # Database & Data
 *.db
 *.sqlite3
-*.parquet
 postgres_data/
+data/*
+!data/historical/
+!data/historical/**
+!data/news_features/
+!data/news_features/**
 
 # IDE
 .idea/
@@ -60,7 +64,9 @@ web/dist/
 web/.next/
 
 # Agent Scratch
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 ORIGINAL_REQUEST.md
 PROJECT.md
 TEST_INFRA.md

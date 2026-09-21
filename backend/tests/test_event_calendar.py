@@ -203,11 +203,11 @@ class TestEarningsLeadTimeBlocker:
         ("days_ahead", "expected_blocked"),
         [
             (10, False),  # 10 días antes -> No bloqueado
-            (5, False),   # 5 días antes -> No bloqueado
-            (3, False),   # 3 días antes -> No bloqueado
-            (2, True),    # 2 días antes (límite exacto) -> Bloqueado
-            (1, True),    # 1 día antes -> Bloqueado
-            (0, True),    # Mismo día del reporte -> Bloqueado
+            (5, False),  # 5 días antes -> No bloqueado
+            (3, False),  # 3 días antes -> No bloqueado
+            (2, True),  # 2 días antes (límite exacto) -> Bloqueado
+            (1, True),  # 1 día antes -> Bloqueado
+            (0, True),  # Mismo día del reporte -> Bloqueado
             (-1, False),  # Día posterior al reporte -> No bloqueado
             (-5, False),  # 5 días después -> No bloqueado
         ],
@@ -244,7 +244,11 @@ class TestEarningsLeadTimeBlocker:
 
         # 4. Falla de red con cache vencido -> Bloqueado con EARNINGS_DATA_UNAVAILABLE
         cal.network_error = True
-        cal.seed_earnings("TSLA", sim_clock.today() + timedelta(days=10), cached_at=sim_clock.now() - timedelta(days=4))
+        cal.seed_earnings(
+            "TSLA",
+            sim_clock.today() + timedelta(days=10),
+            cached_at=sim_clock.now() - timedelta(days=4),
+        )
         blocked, reason = cal.is_symbol_blocked("TSLA")
         assert blocked
         assert reason == "EARNINGS_DATA_UNAVAILABLE"
@@ -280,10 +284,17 @@ class TestMacroYAMLLoader:
         assert len(macro_filter.events) == 0
 
         event_time = sim_clock.now() + timedelta(hours=2)
-        macro_filter.load_events([
-            {"name": "CPI Release", "type": "CPI", "timestamp": event_time, "impact": "high"},
-            {"name": "FOMC Meeting", "type": "FOMC", "timestamp": event_time + timedelta(days=1), "impact": "critical"},
-        ])
+        macro_filter.load_events(
+            [
+                {"name": "CPI Release", "type": "CPI", "timestamp": event_time, "impact": "high"},
+                {
+                    "name": "FOMC Meeting",
+                    "type": "FOMC",
+                    "timestamp": event_time + timedelta(days=1),
+                    "impact": "critical",
+                },
+            ]
+        )
         assert len(macro_filter.events) == 2
 
 
@@ -300,13 +311,13 @@ class TestMacroBlackoutWindow:
         [
             (-45, False),  # 45 min antes -> Libre
             (-31, False),  # 31 min antes -> Libre
-            (-30, True),   # 30 min antes (límite exacto) -> Bloqueado
-            (-15, True),   # 15 min antes -> Bloqueado
-            (0, True),     # En el instante exacto -> Bloqueado
-            (15, True),    # 15 min después -> Bloqueado
-            (30, True),    # 30 min después (límite exacto) -> Bloqueado
-            (31, False),   # 31 min después -> Libre
-            (60, False),   # 60 min después -> Libre
+            (-30, True),  # 30 min antes (límite exacto) -> Bloqueado
+            (-15, True),  # 15 min antes -> Bloqueado
+            (0, True),  # En el instante exacto -> Bloqueado
+            (15, True),  # 15 min después -> Bloqueado
+            (30, True),  # 30 min después (límite exacto) -> Bloqueado
+            (31, False),  # 31 min después -> Libre
+            (60, False),  # 60 min después -> Libre
         ],
     )
     def test_macro_blackout_boundaries(
@@ -314,9 +325,9 @@ class TestMacroBlackoutWindow:
     ) -> None:
         macro_filter = MacroFilter(clock=sim_clock, yaml_path=Path("/non_existent.yaml"))
         event_time = datetime(2026, 9, 11, 12, 30, 0, tzinfo=UTC)  # 08:30 ET
-        macro_filter.load_events([
-            {"name": "CPI - Inflación", "type": "CPI", "timestamp": event_time, "impact": "high"}
-        ])
+        macro_filter.load_events(
+            [{"name": "CPI - Inflación", "type": "CPI", "timestamp": event_time, "impact": "high"}]
+        )
 
         query_time = event_time + timedelta(minutes=offset_minutes)
         blocked, reason = macro_filter.is_macro_window_active(query_time, strategy_type="intraday")
@@ -339,25 +350,31 @@ class TestFOMCAllDaySwingBlock:
         macro_filter = MacroFilter(clock=sim_clock, yaml_path=Path("/non_existent.yaml"))
         # FOMC a las 14:00 ET (18:00 UTC) el 2026-09-16
         fomc_time = datetime(2026, 9, 16, 18, 0, 0, tzinfo=UTC)
-        macro_filter.load_events([
-            {
-                "name": "FOMC - Decisión de tipos y conferencia",
-                "type": "FOMC",
-                "timestamp": fomc_time,
-                "impact": "critical",
-            }
-        ])
+        macro_filter.load_events(
+            [
+                {
+                    "name": "FOMC - Decisión de tipos y conferencia",
+                    "type": "FOMC",
+                    "timestamp": fomc_time,
+                    "impact": "critical",
+                }
+            ]
+        )
 
         # 1. Mañana de FOMC (09:45 ET = 13:45 UTC, 255 min antes del anuncio):
         morning_query = datetime(2026, 9, 16, 13, 45, 0, tzinfo=UTC)
 
         # Estrategia swing: bloqueada todo el día
-        blocked_swing, reason_swing = macro_filter.is_macro_window_active(morning_query, strategy_type="swing")
+        blocked_swing, reason_swing = macro_filter.is_macro_window_active(
+            morning_query, strategy_type="swing"
+        )
         assert blocked_swing is True
         assert reason_swing == "FOMC_ALL_DAY_SWING_BLOCK"
 
         # Estrategia intradía: permitida en la mañana (fuera de la ventana de 30m)
-        blocked_intra, reason_intra = macro_filter.is_macro_window_active(morning_query, strategy_type="intraday")
+        blocked_intra, reason_intra = macro_filter.is_macro_window_active(
+            morning_query, strategy_type="intraday"
+        )
         assert blocked_intra is False
         assert reason_intra == "OK"
 
@@ -372,10 +389,14 @@ class TestFOMCAllDaySwingBlock:
 
         # 3. Tarde posterior a la ventana de 30m (15:00 ET = 19:00 UTC, 60m después):
         afternoon_query = datetime(2026, 9, 16, 19, 0, 0, tzinfo=UTC)
-        b_intra_after, _ = macro_filter.is_macro_window_active(afternoon_query, strategy_type="intraday")
+        b_intra_after, _ = macro_filter.is_macro_window_active(
+            afternoon_query, strategy_type="intraday"
+        )
         assert b_intra_after is False  # Intradía libre
 
-        b_swing_after, r_swing_after = macro_filter.is_macro_window_active(afternoon_query, strategy_type="swing")
+        b_swing_after, r_swing_after = macro_filter.is_macro_window_active(
+            afternoon_query, strategy_type="swing"
+        )
         assert b_swing_after is True  # Swing sigue bloqueado por ser día FOMC
         assert r_swing_after == "FOMC_ALL_DAY_SWING_BLOCK"
 
@@ -383,13 +404,15 @@ class TestFOMCAllDaySwingBlock:
         """Días de CPI o NFP solo bloquean en la ventana de 30m, NO todo el día a swing."""
         macro_filter = MacroFilter(clock=sim_clock, yaml_path=Path("/non_existent.yaml"))
         cpi_time = datetime(2026, 9, 11, 12, 30, 0, tzinfo=UTC)  # 08:30 ET
-        macro_filter.load_events([
-            {"name": "CPI - Inflación", "type": "CPI", "timestamp": cpi_time, "impact": "high"}
-        ])
+        macro_filter.load_events(
+            [{"name": "CPI - Inflación", "type": "CPI", "timestamp": cpi_time, "impact": "high"}]
+        )
 
         # 11:00 ET (15:00 UTC) -> Lejos del CPI de las 08:30 ET
         query = datetime(2026, 9, 11, 15, 0, 0, tzinfo=UTC)
-        blocked_swing, reason_swing = macro_filter.is_macro_window_active(query, strategy_type="swing")
+        blocked_swing, reason_swing = macro_filter.is_macro_window_active(
+            query, strategy_type="swing"
+        )
         assert blocked_swing is False
         assert reason_swing == "OK"
 
@@ -409,7 +432,7 @@ class TestMacroCalendarExpiryMonitor:
             (45, False),
             (31, False),
             (30, False),  # Límite exacto de 30 días -> No requiere alerta
-            (29, True),   # < 30 días -> Requiere alerta
+            (29, True),  # < 30 días -> Requiere alerta
             (10, True),
             (0, True),
         ],
@@ -422,9 +445,9 @@ class TestMacroCalendarExpiryMonitor:
 
         if remaining_days > 0:
             future_event = now + timedelta(days=remaining_days)
-            macro_filter.load_events([
-                {"name": "Future Event", "timestamp": future_event, "impact": "high"}
-            ])
+            macro_filter.load_events(
+                [{"name": "Future Event", "timestamp": future_event, "impact": "high"}]
+            )
         else:
             macro_filter.load_events([])
 
@@ -488,7 +511,11 @@ class TestDatabaseEventPersistence:
             ev.fetched_at.replace(tzinfo=UTC) if ev.fetched_at.tzinfo is None else ev.fetched_at
         )
         assert fetched_at_utc == sim_clock.now()
-        ts_et_date = ev.ts_et.date() if isinstance(ev.ts_et, datetime) else date.fromisoformat(str(ev.ts_et)[:10])
+        ts_et_date = (
+            ev.ts_et.date()
+            if isinstance(ev.ts_et, datetime)
+            else date.fromisoformat(str(ev.ts_et)[:10])
+        )
         assert ts_et_date == date(2026, 10, 15)
 
 

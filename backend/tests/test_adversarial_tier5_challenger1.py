@@ -50,16 +50,16 @@ from tbot.regime.filter import MarketRegime, RegimeFilter
 def mock_holidays_2026() -> set[date]:
     """Official 2026 US market holidays."""
     return {
-        date(2026, 1, 1),   # New Year's Day
+        date(2026, 1, 1),  # New Year's Day
         date(2026, 1, 19),  # MLK Day
         date(2026, 2, 16),  # Washington's Birthday (Presidents' Day)
-        date(2026, 4, 3),   # Good Friday
+        date(2026, 4, 3),  # Good Friday
         date(2026, 5, 25),  # Memorial Day
         date(2026, 6, 19),  # Juneteenth
-        date(2026, 7, 3),   # Independence Day (Observed)
-        date(2026, 9, 7),   # Labor Day
-        date(2026, 11, 26), # Thanksgiving
-        date(2026, 12, 25), # Christmas
+        date(2026, 7, 3),  # Independence Day (Observed)
+        date(2026, 9, 7),  # Labor Day
+        date(2026, 11, 26),  # Thanksgiving
+        date(2026, 12, 25),  # Christmas
     }
 
 
@@ -203,7 +203,7 @@ class TestIndicatorsWhiteBoxAdversarial:
         ret = percentage_returns(s, periods=1)
         assert np.isnan(ret.iloc[0])
         assert np.isnan(ret.iloc[1])  # (10 - 0) / 0 = inf -> replaced by nan
-        assert ret.iloc[2] == -1.0    # (0 - 10) / 10 = -1.0
+        assert ret.iloc[2] == -1.0  # (0 - 10) / 10 = -1.0
 
     def test_realized_volatility_window_exceeds_series(self) -> None:
         """Realized volatility with window > len(series) must return all NaN Series."""
@@ -360,7 +360,9 @@ class TestMarketCalendarWhiteBoxAdversarial:
         assert calendar_2026.is_market_open(t_close) is False
         assert calendar_2026.is_close_window(t_close) is True
 
-    def test_minutes_since_open_post_market_observation(self, calendar_2026: MarketCalendar) -> None:
+    def test_minutes_since_open_post_market_observation(
+        self, calendar_2026: MarketCalendar
+    ) -> None:
         """White-box observation: minutes_since_open does not check is_market_open,
 
         returning total minutes elapsed since 09:30 ET even after market close.
@@ -371,7 +373,9 @@ class TestMarketCalendarWhiteBoxAdversarial:
         # 10.5 hours = 630 minutes
         assert elapsed == 630.0
 
-    def test_uncached_date_without_trading_client_raises(self, calendar_2026: MarketCalendar) -> None:
+    def test_uncached_date_without_trading_client_raises(
+        self, calendar_2026: MarketCalendar
+    ) -> None:
         """Querying a date outside the covered range without TradingClient must raise MarketDataError."""
         outside_date = date(2027, 1, 5)
         with pytest.raises(MarketDataError, match="no se configuró un TradingClient"):
@@ -584,9 +588,9 @@ class TestEventCalendarWhiteBoxAdversarial:
         """Verify the exact 30-minute blackout window at second-level precision."""
         event_time = datetime(2026, 4, 17, 14, 0, 0, tzinfo=UTC)
         macro_filter = MacroFilter(clock=sim_clock, macro_block_minutes=30)
-        macro_filter.load_events([
-            {"name": "CPI Release", "type": "CPI", "timestamp": event_time, "impact": "high"}
-        ])
+        macro_filter.load_events(
+            [{"name": "CPI Release", "type": "CPI", "timestamp": event_time, "impact": "high"}]
+        )
 
         # 1. 30m + 1 second before -> Outside window
         t_minus_30m_1s = event_time - timedelta(minutes=30, seconds=1)
@@ -625,26 +629,39 @@ class TestEventCalendarWhiteBoxAdversarial:
         # FOMC at 14:00 ET (18:00 UTC)
         fomc_time = datetime(2026, 5, 6, 18, 0, 0, tzinfo=UTC)
         macro_filter = MacroFilter(clock=sim_clock, macro_block_minutes=30)
-        macro_filter.load_events([
-            {"name": "FOMC Statement", "type": "FOMC", "timestamp": fomc_time, "impact": "critical"}
-        ])
+        macro_filter.load_events(
+            [
+                {
+                    "name": "FOMC Statement",
+                    "type": "FOMC",
+                    "timestamp": fomc_time,
+                    "impact": "critical",
+                }
+            ]
+        )
 
         # 10:00 ET (14:00 UTC) on FOMC day
         t_morning = datetime(2026, 5, 6, 14, 0, 0, tzinfo=UTC)
 
         # Swing strategy must be blocked all day
-        blocked_swing, reason_swing = macro_filter.is_macro_window_active(t_morning, strategy_type="swing")
+        blocked_swing, reason_swing = macro_filter.is_macro_window_active(
+            t_morning, strategy_type="swing"
+        )
         assert blocked_swing is True
         assert reason_swing == "FOMC_ALL_DAY_SWING_BLOCK"
 
         # Intraday strategy is NOT blocked in the morning
-        blocked_intraday, reason_intraday = macro_filter.is_macro_window_active(t_morning, strategy_type="intraday")
+        blocked_intraday, reason_intraday = macro_filter.is_macro_window_active(
+            t_morning, strategy_type="intraday"
+        )
         assert blocked_intraday is False
         assert reason_intraday == "OK"
 
         # 13:45 ET (17:45 UTC) -> Within 30m window
         t_window = datetime(2026, 5, 6, 17, 45, 0, tzinfo=UTC)
-        blocked_intraday_win, _ = macro_filter.is_macro_window_active(t_window, strategy_type="intraday")
+        blocked_intraday_win, _ = macro_filter.is_macro_window_active(
+            t_window, strategy_type="intraday"
+        )
         assert blocked_intraday_win is True
 
     def test_macro_calendar_expiry_monitor(self, sim_clock: SimulatedClock) -> None:
@@ -654,17 +671,31 @@ class TestEventCalendarWhiteBoxAdversarial:
         curr_time = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
         # Event 15 days in the future (< 30 days)
-        macro_filter.load_events([
-            {"name": "CPI", "type": "CPI", "timestamp": curr_time + timedelta(days=15), "impact": "high"}
-        ])
+        macro_filter.load_events(
+            [
+                {
+                    "name": "CPI",
+                    "type": "CPI",
+                    "timestamp": curr_time + timedelta(days=15),
+                    "impact": "high",
+                }
+            ]
+        )
         needs_alert, remaining_days = macro_filter.check_calendar_expiry(curr_time, horizon_days=30)
         assert needs_alert is True
         assert remaining_days == 15
 
         # Event 45 days in the future (>= 30 days)
-        macro_filter.load_events([
-            {"name": "FOMC", "type": "FOMC", "timestamp": curr_time + timedelta(days=45), "impact": "critical"}
-        ])
+        macro_filter.load_events(
+            [
+                {
+                    "name": "FOMC",
+                    "type": "FOMC",
+                    "timestamp": curr_time + timedelta(days=45),
+                    "impact": "critical",
+                }
+            ]
+        )
         needs_alert, remaining_days = macro_filter.check_calendar_expiry(curr_time, horizon_days=30)
         assert needs_alert is False
         assert remaining_days == 45

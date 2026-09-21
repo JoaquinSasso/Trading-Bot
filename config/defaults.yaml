@@ -73,9 +73,9 @@ parameters:
     description: "Puntuación mínima de calidad requerida para procesar una señal de estrategia"
 
   veto_mode:
-    default: "required"
-    allowed_values: ["off", "advisory", "required"]
-    description: "Modo de veto de IA: off (desactivado), advisory (registra sin bloquear), required (bloquea si rechaza o falla)"
+    default: "quantitative"
+    allowed_values: ["quantitative", "off", "advisory", "required"]
+    description: "Modo de veto de noticias: quantitative (reglas matemáticas deterministas sobre FinBERT), off (desactivado), advisory (LLM registra sin bloquear), required (LLM bloquea)"
 
   daily_loss_limit_pct:
     default: 2.0

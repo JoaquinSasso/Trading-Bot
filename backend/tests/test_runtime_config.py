@@ -16,7 +16,7 @@ def test_runtime_config_manager_loads_defaults() -> None:
     assert defaults["risk_per_trade_pct"] == 0.5
     assert defaults["max_risk_per_trade_pct_hard"] == 1.0
     assert defaults["allow_fractional_bot"] is True
-    assert defaults["veto_mode"] == "required"
+    assert defaults["veto_mode"] == "quantitative"
     assert defaults["daily_loss_limit_pct"] == 2.0
     assert defaults["emergency_loss_limit_pct"] == 3.5
 

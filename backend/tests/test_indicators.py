@@ -65,7 +65,9 @@ def reference_csv_bars() -> pd.DataFrame:
 
 
 class TestSMA:
-    def test_sma_matches_reference_simple_linear(self, indicators_reference: dict[str, Any]) -> None:
+    def test_sma_matches_reference_simple_linear(
+        self, indicators_reference: dict[str, Any]
+    ) -> None:
         bench = indicators_reference["benchmarks"]["simple_linear"]
         prices = pd.Series(bench["prices"], dtype=float)
         period = bench["period"]
@@ -77,7 +79,9 @@ class TestSMA:
         assert result.index.equals(prices.index)
         assert_allclose(result.to_numpy(), expected, atol=1e-6, rtol=1e-6, equal_nan=True)
 
-    def test_sma_matches_reference_stockcharts_10(self, indicators_reference: dict[str, Any]) -> None:
+    def test_sma_matches_reference_stockcharts_10(
+        self, indicators_reference: dict[str, Any]
+    ) -> None:
         bench = indicators_reference["benchmarks"]["stockcharts_ema_10"]
         prices = pd.Series(bench["prices"], dtype=float)
         period = bench["period"]
@@ -138,7 +142,9 @@ class TestSMA:
 
 
 class TestEMA:
-    def test_ema_matches_reference_simple_linear(self, indicators_reference: dict[str, Any]) -> None:
+    def test_ema_matches_reference_simple_linear(
+        self, indicators_reference: dict[str, Any]
+    ) -> None:
         bench = indicators_reference["benchmarks"]["simple_linear"]
         prices = pd.Series(bench["prices"], dtype=float)
         period = bench["period"]
@@ -149,7 +155,9 @@ class TestEMA:
         assert len(result) == len(prices)
         assert_allclose(result.to_numpy(), expected, atol=1e-6, rtol=1e-6)
 
-    def test_ema_matches_reference_stockcharts_10(self, indicators_reference: dict[str, Any]) -> None:
+    def test_ema_matches_reference_stockcharts_10(
+        self, indicators_reference: dict[str, Any]
+    ) -> None:
         bench = indicators_reference["benchmarks"]["stockcharts_ema_10"]
         prices = pd.Series(bench["prices"], dtype=float)
         period = bench["period"]
@@ -393,7 +401,9 @@ class TestPercentageReturns:
         result = percentage_returns(prices, periods=1)
         assert_allclose(result.to_numpy(), expected, atol=1e-6, rtol=1e-6, equal_nan=True)
 
-    def test_percentage_returns_matches_reference_csv(self, reference_csv_bars: pd.DataFrame) -> None:
+    def test_percentage_returns_matches_reference_csv(
+        self, reference_csv_bars: pd.DataFrame
+    ) -> None:
         close = reference_csv_bars["close"]
         expected = reference_csv_bars["returns_1"].to_numpy()
 
@@ -422,7 +432,9 @@ class TestPercentageReturns:
         assert result.empty
 
     @pytest.mark.parametrize("invalid_periods", [0, -1, -5])
-    def test_percentage_returns_invalid_periods_raises_value_error(self, invalid_periods: int) -> None:
+    def test_percentage_returns_invalid_periods_raises_value_error(
+        self, invalid_periods: int
+    ) -> None:
         prices = pd.Series([10.0, 11.0], dtype=float)
         with pytest.raises(ValueError, match="periods must be a positive integer"):
             percentage_returns(prices, periods=invalid_periods)
@@ -438,14 +450,18 @@ class TestPercentageReturns:
 
 
 class TestRealizedVolatility20d:
-    def test_realized_volatility_matches_oracle_50_bars(self, oracle_50_bars: dict[str, Any]) -> None:
+    def test_realized_volatility_matches_oracle_50_bars(
+        self, oracle_50_bars: dict[str, Any]
+    ) -> None:
         close = pd.Series(oracle_50_bars["prices"], dtype=float)
         expected_vol = np.array([np.nan if x is None else x for x in oracle_50_bars["vol_20d"]])
 
         result = realized_volatility_20d(close, annualized=True, window=20)
         assert_allclose(result.to_numpy(), expected_vol, atol=1e-6, rtol=1e-6, equal_nan=True)
 
-    def test_realized_volatility_matches_reference_csv(self, reference_csv_bars: pd.DataFrame) -> None:
+    def test_realized_volatility_matches_reference_csv(
+        self, reference_csv_bars: pd.DataFrame
+    ) -> None:
         close = reference_csv_bars["close"]
         expected = reference_csv_bars["volatility_20d"].to_numpy()
 
@@ -470,7 +486,9 @@ class TestRealizedVolatility20d:
 
         ratio = res_ann / res_raw
         valid_ratios = ratio.dropna()
-        assert_allclose(valid_ratios.to_numpy(), np.full(len(valid_ratios), np.sqrt(252)), atol=1e-6)
+        assert_allclose(
+            valid_ratios.to_numpy(), np.full(len(valid_ratios), np.sqrt(252)), atol=1e-6
+        )
 
     def test_realized_volatility_shorter_than_window(self) -> None:
         short_s = pd.Series([100.0] * 15, dtype=float)
@@ -484,7 +502,9 @@ class TestRealizedVolatility20d:
         assert result.empty
 
     @pytest.mark.parametrize("invalid_window", [0, 1, -5])
-    def test_realized_volatility_invalid_window_raises_value_error(self, invalid_window: int) -> None:
+    def test_realized_volatility_invalid_window_raises_value_error(
+        self, invalid_window: int
+    ) -> None:
         prices = pd.Series([100.0] * 10, dtype=float)
         with pytest.raises(ValueError, match="window must be >= 2"):
             realized_volatility_20d(prices, window=invalid_window)

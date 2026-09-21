@@ -49,7 +49,7 @@ class TestRealWorldFullTradingDay:
 
         # In opening window (9:30 - 10:00 ET), standard strategies S1/S2/S3 are blocked
         minute_et = 30
-        open_window_blocked = (30 <= minute_et < 60)
+        open_window_blocked = 30 <= minute_et < 60
         assert open_window_blocked is True
 
         # S4 (opening range breakout) is allowed if allows_open_window=True
@@ -63,7 +63,9 @@ class TestRealWorldFullTradingDay:
 
         # Fetch fresh 5m bars aggregated from 1m IEX stream
         start_bars = clock.now() - timedelta(minutes=30)
-        df_5m = await provider.get_intraday_bars(["SPY", "QQQ"], "5m", start_bars, clock.now(), feed="iex")
+        df_5m = await provider.get_intraday_bars(
+            ["SPY", "QQQ"], "5m", start_bars, clock.now(), feed="iex"
+        )
         assert not df_5m.empty
 
         # 4. Advance to 12:00 ET (16:00 UTC) - Midday session
@@ -115,8 +117,8 @@ class TestRealWorldEarlyCloseDay:
 
         # Calculate dynamic early-close triggers
         dynamic_close_window_start = day.close_time - timedelta(minutes=10)  # 12:50 ET = 17:50 UTC
-        dynamic_moc_exit = day.close_time - timedelta(minutes=2)             # 12:58 ET = 17:58 UTC
-        dynamic_s1_eval = day.close_time - timedelta(minutes=30)             # 12:30 ET = 17:30 UTC
+        dynamic_moc_exit = day.close_time - timedelta(minutes=2)  # 12:58 ET = 17:58 UTC
+        dynamic_s1_eval = day.close_time - timedelta(minutes=30)  # 12:30 ET = 17:30 UTC
 
         # At 12:30 ET (17:30 UTC): S1 evaluates (adjusted from 15:30 ET)
         clock.set_time(dynamic_s1_eval)
@@ -147,39 +149,58 @@ class TestRealWorldMacroFOMCDay:
         macro_filter = MockMacroFilter(clock=clock)
 
         fomc_time = datetime(2026, 9, 16, 18, 0, 0, tzinfo=UTC)  # 14:00 ET
-        macro_filter.load_events([
-            {"name": "FOMC Decision", "type": "FOMC", "timestamp": fomc_time, "impact": "critical"}
-        ])
+        macro_filter.load_events(
+            [
+                {
+                    "name": "FOMC Decision",
+                    "type": "FOMC",
+                    "timestamp": fomc_time,
+                    "impact": "critical",
+                }
+            ]
+        )
 
         # 1. Morning 9:45 ET (13:45 UTC): Swing strategies (S2, S3) are locked ALL DAY
         clock.set_time(datetime(2026, 9, 16, 13, 45, 0, tzinfo=UTC))
-        swing_blocked, reason = macro_filter.is_macro_window_active(clock.now(), strategy_type="swing")
+        swing_blocked, reason = macro_filter.is_macro_window_active(
+            clock.now(), strategy_type="swing"
+        )
         assert swing_blocked is True
         assert reason == "FOMC_ALL_DAY_SWING_BLOCK"
 
         # Intraday strategy S1 is NOT blocked in morning (outside 30m window)
-        intraday_blocked, _ = macro_filter.is_macro_window_active(clock.now(), strategy_type="intraday")
+        intraday_blocked, _ = macro_filter.is_macro_window_active(
+            clock.now(), strategy_type="intraday"
+        )
         assert intraday_blocked is False
 
         # 2. At 13:35 ET (17:35 UTC) - 25 min before FOMC: 30m blackout window engaged
         clock.set_time(datetime(2026, 9, 16, 17, 35, 0, tzinfo=UTC))
-        intraday_blocked, reason = macro_filter.is_macro_window_active(clock.now(), strategy_type="intraday")
+        intraday_blocked, reason = macro_filter.is_macro_window_active(
+            clock.now(), strategy_type="intraday"
+        )
         assert intraday_blocked is True
         assert "MACRO_WINDOW" in reason
 
         # 3. At 14:00 ET (18:00 UTC) - FOMC statement released: blackout engaged
         clock.set_time(fomc_time)
-        intraday_blocked, _ = macro_filter.is_macro_window_active(clock.now(), strategy_type="intraday")
+        intraday_blocked, _ = macro_filter.is_macro_window_active(
+            clock.now(), strategy_type="intraday"
+        )
         assert intraday_blocked is True
 
         # 4. At 14:25 ET (18:25 UTC) - 25 min after FOMC: still in 30m window
         clock.set_time(datetime(2026, 9, 16, 18, 25, 0, tzinfo=UTC))
-        intraday_blocked, _ = macro_filter.is_macro_window_active(clock.now(), strategy_type="intraday")
+        intraday_blocked, _ = macro_filter.is_macro_window_active(
+            clock.now(), strategy_type="intraday"
+        )
         assert intraday_blocked is True
 
         # 5. At 14:31 ET (18:31 UTC) - 31 min after FOMC: window clears for intraday
         clock.set_time(datetime(2026, 9, 16, 18, 31, 0, tzinfo=UTC))
-        intraday_blocked, _ = macro_filter.is_macro_window_active(clock.now(), strategy_type="intraday")
+        intraday_blocked, _ = macro_filter.is_macro_window_active(
+            clock.now(), strategy_type="intraday"
+        )
         assert intraday_blocked is False
 
         # Swing strategy still blocked for entire day

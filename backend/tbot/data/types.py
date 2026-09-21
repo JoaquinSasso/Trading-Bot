@@ -73,7 +73,9 @@ class PriceQuote:
             calc_mid = (self.bid + self.ask) / Decimal("2")
             object.__setattr__(self, "midpoint", calc_mid)
         if self.spread_bps is None:
-            mid = self.midpoint if self.midpoint is not None else (self.bid + self.ask) / Decimal("2")
+            mid = (
+                self.midpoint if self.midpoint is not None else (self.bid + self.ask) / Decimal("2")
+            )
             if mid > Decimal("0"):
                 calc_spread = float(((self.ask - self.bid) / mid) * Decimal("10000"))
             else:

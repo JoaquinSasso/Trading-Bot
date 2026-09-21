@@ -14,17 +14,19 @@ def test_resample_exact_5_minutes_label_right() -> None:
     bars_1m = []
     prices = [100.0, 102.5, 99.0, 101.0, 103.0]
     for i, p in enumerate(prices):
-        bars_1m.append({
-            "timestamp": base_time + timedelta(minutes=i),
-            "symbol": "SPY",
-            "open": p,
-            "high": p + 1.0,
-            "low": p - 1.0,
-            "close": p + 0.5,
-            "volume": 1000.0,
-            "vwap": p + 0.25,
-            "trade_count": 10,
-        })
+        bars_1m.append(
+            {
+                "timestamp": base_time + timedelta(minutes=i),
+                "symbol": "SPY",
+                "open": p,
+                "high": p + 1.0,
+                "low": p - 1.0,
+                "close": p + 0.5,
+                "volume": 1000.0,
+                "vwap": p + 0.25,
+                "trade_count": 10,
+            }
+        )
     df_1m = pd.DataFrame(bars_1m)
 
     res = resample_1m_to_5m(df_1m)
@@ -36,7 +38,7 @@ def test_resample_exact_5_minutes_label_right() -> None:
     assert row["symbol"] == "SPY"
     assert row["open"] == 100.0
     assert row["high"] == 104.0  # max(p + 1.0) = 103 + 1
-    assert row["low"] == 98.0   # min(p - 1.0) = 99 - 1
+    assert row["low"] == 98.0  # min(p - 1.0) = 99 - 1
     assert row["close"] == 103.5  # last close = 103 + 0.5
     assert row["volume"] == 5000.0
     assert row["trade_count"] == 50
@@ -48,14 +50,16 @@ def test_resample_next_bucket_labeling() -> None:
     base_time = datetime(2026, 9, 21, 9, 35, 0, tzinfo=UTC)
     bars_1m = []
     for i in range(5):
-        bars_1m.append({
-            "timestamp": base_time + timedelta(minutes=i),
-            "open": 200.0,
-            "high": 201.0,
-            "low": 199.0,
-            "close": 200.5,
-            "volume": 500.0,
-        })
+        bars_1m.append(
+            {
+                "timestamp": base_time + timedelta(minutes=i),
+                "open": 200.0,
+                "high": 201.0,
+                "low": 199.0,
+                "close": 200.5,
+                "volume": 500.0,
+            }
+        )
     df_1m = pd.DataFrame(bars_1m)
     res = resample_1m_to_5m(df_1m)
     assert len(res) == 1
@@ -64,26 +68,28 @@ def test_resample_next_bucket_labeling() -> None:
 
 def test_vwap_volume_weighted_calculation() -> None:
     base_time = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
-    df_1m = pd.DataFrame([
-        {
-            "timestamp": base_time,
-            "open": 100.0,
-            "high": 101.0,
-            "low": 99.0,
-            "close": 100.0,
-            "volume": 1000.0,
-            "vwap": 100.0,
-        },
-        {
-            "timestamp": base_time + timedelta(minutes=1),
-            "open": 105.0,
-            "high": 106.0,
-            "low": 104.0,
-            "close": 105.0,
-            "volume": 3000.0,
-            "vwap": 105.0,
-        },
-    ])
+    df_1m = pd.DataFrame(
+        [
+            {
+                "timestamp": base_time,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 1000.0,
+                "vwap": 100.0,
+            },
+            {
+                "timestamp": base_time + timedelta(minutes=1),
+                "open": 105.0,
+                "high": 106.0,
+                "low": 104.0,
+                "close": 105.0,
+                "volume": 3000.0,
+                "vwap": 105.0,
+            },
+        ]
+    )
     res = resample_1m_to_5m(df_1m)
     assert len(res) == 1
     # Expected VWAP: (100.0 * 1000 + 105.0 * 3000) / 4000 = 415,000 / 4000 = 103.75
@@ -92,17 +98,19 @@ def test_vwap_volume_weighted_calculation() -> None:
 
 def test_vwap_zero_volume_fallback_to_close() -> None:
     base_time = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
-    df_1m = pd.DataFrame([
-        {
-            "timestamp": base_time + timedelta(minutes=i),
-            "open": 50.0,
-            "high": 51.0,
-            "low": 49.0,
-            "close": 50.5,
-            "volume": 0.0,
-        }
-        for i in range(5)
-    ])
+    df_1m = pd.DataFrame(
+        [
+            {
+                "timestamp": base_time + timedelta(minutes=i),
+                "open": 50.0,
+                "high": 51.0,
+                "low": 49.0,
+                "close": 50.5,
+                "volume": 0.0,
+            }
+            for i in range(5)
+        ]
+    )
     res = resample_1m_to_5m(df_1m)
     assert len(res) == 1
     assert res.iloc[0]["volume"] == 0.0
@@ -112,24 +120,26 @@ def test_vwap_zero_volume_fallback_to_close() -> None:
 def test_missing_1m_bars_within_bucket() -> None:
     # Prints only at 09:30 and 09:34
     base_time = datetime(2026, 9, 21, 9, 30, 0, tzinfo=UTC)
-    df_1m = pd.DataFrame([
-        {
-            "timestamp": base_time,
-            "open": 100.0,
-            "high": 102.0,
-            "low": 99.0,
-            "close": 101.0,
-            "volume": 200.0,
-        },
-        {
-            "timestamp": base_time + timedelta(minutes=4),
-            "open": 101.0,
-            "high": 103.0,
-            "low": 100.0,
-            "close": 102.5,
-            "volume": 300.0,
-        },
-    ])
+    df_1m = pd.DataFrame(
+        [
+            {
+                "timestamp": base_time,
+                "open": 100.0,
+                "high": 102.0,
+                "low": 99.0,
+                "close": 101.0,
+                "volume": 200.0,
+            },
+            {
+                "timestamp": base_time + timedelta(minutes=4),
+                "open": 101.0,
+                "high": 103.0,
+                "low": 100.0,
+                "close": 102.5,
+                "volume": 300.0,
+            },
+        ]
+    )
     res = resample_1m_to_5m(df_1m)
     assert len(res) == 1
     row = res.iloc[0]
@@ -165,15 +175,17 @@ def test_multi_symbol_resampling() -> None:
     bars = []
     for sym, price in [("SPY", 500.0), ("QQQ", 450.0)]:
         for i in range(5):
-            bars.append({
-                "timestamp": base_time + timedelta(minutes=i),
-                "symbol": sym,
-                "open": price,
-                "high": price + 1.0,
-                "low": price - 1.0,
-                "close": price + 0.5,
-                "volume": 100.0,
-            })
+            bars.append(
+                {
+                    "timestamp": base_time + timedelta(minutes=i),
+                    "symbol": sym,
+                    "open": price,
+                    "high": price + 1.0,
+                    "low": price - 1.0,
+                    "close": price + 0.5,
+                    "volume": 100.0,
+                }
+            )
     df = pd.DataFrame(bars)
     res = aggregate_1m_to_5m(df)
     assert len(res) == 2

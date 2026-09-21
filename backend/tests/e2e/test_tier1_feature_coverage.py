@@ -115,9 +115,9 @@ class TestFeature04AlpacaMarketClock:
     @pytest.mark.parametrize(
         ("test_hour_utc", "expected_open"),
         [
-            (14, True),   # 10:00 ET (regular session open)
-            (16, True),   # 12:00 ET (regular session open)
-            (19, True),   # 15:00 ET (regular session open)
+            (14, True),  # 10:00 ET (regular session open)
+            (16, True),  # 12:00 ET (regular session open)
+            (19, True),  # 15:00 ET (regular session open)
             (10, False),  # 06:00 ET (pre-market closed)
             (21, False),  # 17:00 ET (post-market closed)
         ],
@@ -138,11 +138,11 @@ class TestFeature05AlpacaCalendar:
     @pytest.mark.parametrize(
         ("start", "end", "expected_trading_days"),
         [
-            (date(2026, 9, 14), date(2026, 9, 18), 5),   # Standard 5-day week
-            (date(2026, 9, 1), date(2026, 9, 30), 22),   # Full September month
-            (date(2026, 10, 1), date(2026, 10, 7), 5),   # 1 week spanning weekend
-            (date(2026, 9, 18), date(2026, 9, 18), 1),   # Single trading day
-            (date(2026, 9, 19), date(2026, 9, 20), 0),   # Weekend (Saturday & Sunday)
+            (date(2026, 9, 14), date(2026, 9, 18), 5),  # Standard 5-day week
+            (date(2026, 9, 1), date(2026, 9, 30), 22),  # Full September month
+            (date(2026, 10, 1), date(2026, 10, 7), 5),  # 1 week spanning weekend
+            (date(2026, 9, 18), date(2026, 9, 18), 1),  # Single trading day
+            (date(2026, 9, 19), date(2026, 9, 20), 0),  # Weekend (Saturday & Sunday)
         ],
     )
     def test_calendar_trading_day_counts(
@@ -164,9 +164,9 @@ class TestFeature06SIPDelayEnforcement:
     @pytest.mark.parametrize(
         ("minutes_ago", "should_clamp"),
         [
-            (5, True),    # Within 16 min cutoff -> clamp to now - 16 min
-            (10, True),   # Within 16 min cutoff -> clamp
-            (15, True),   # Within 16 min cutoff -> clamp
+            (5, True),  # Within 16 min cutoff -> clamp to now - 16 min
+            (10, True),  # Within 16 min cutoff -> clamp
+            (15, True),  # Within 16 min cutoff -> clamp
             (20, False),  # Older than 16 min -> no clamping needed
             (60, False),  # 1 hour ago -> no clamping needed
         ],
@@ -199,19 +199,24 @@ class TestFeature07Local1mTo5mAggregator:
         ],
     )
     def test_aggregate_5_one_minute_bars(
-        self, start_minute: int, prices: list[float], expected_ohlc: tuple[float, float, float, float, int]
+        self,
+        start_minute: int,
+        prices: list[float],
+        expected_ohlc: tuple[float, float, float, float, int],
     ) -> None:
         bars_1m = []
         base_time = datetime(2026, 9, 18, 14, start_minute, 0, tzinfo=UTC)
         for i, p in enumerate(prices):
-            bars_1m.append({
-                "timestamp": base_time + timedelta(minutes=i),
-                "open": p,
-                "high": p + 0.5,
-                "low": p - 0.5,
-                "close": p,
-                "volume": 100,
-            })
+            bars_1m.append(
+                {
+                    "timestamp": base_time + timedelta(minutes=i),
+                    "open": p,
+                    "high": p + 0.5,
+                    "low": p - 0.5,
+                    "close": p,
+                    "volume": 100,
+                }
+            )
         df_1m = pd.DataFrame(bars_1m)
 
         # 5m aggregation
@@ -282,9 +287,7 @@ class TestFeature09PriceAdjustmentManager:
 class TestFeature10PostgresDailyBarsCache:
     """Feature 10: PostgreSQL Daily Bars Cache (5 tests)."""
 
-    @pytest.mark.parametrize(
-        "symbol", ["SPY", "QQQ", "GLD", "SPYM", "QQQM"]
-    )
+    @pytest.mark.parametrize("symbol", ["SPY", "QQQ", "GLD", "SPYM", "QQQM"])
     @pytest.mark.asyncio
     async def test_cache_hit_and_miss_lifecycle(
         self, sim_clock: SimulatedClock, symbol: str
@@ -321,7 +324,9 @@ class TestFeature11SharedRateLimiter:
     ) -> None:
         limiter = MockRateLimiter(max_requests=180, window_seconds=60.0)
         t = sim_clock.now()
-        results = [limiter.acquire(t + timedelta(milliseconds=i * 100)) for i in range(request_count)]
+        results = [
+            limiter.acquire(t + timedelta(milliseconds=i * 100)) for i in range(request_count)
+        ]
         assert all(results) == expected_all_permitted
 
 
@@ -410,7 +415,11 @@ class TestFeature15RESTFallbackAndEntryBlock:
         ],
     )
     def test_rest_fallback_trigger(
-        self, sim_clock_midday: SimulatedClock, ws_silence: int, expected_fallback: bool, expected_entry_blocked: bool
+        self,
+        sim_clock_midday: SimulatedClock,
+        ws_silence: int,
+        expected_fallback: bool,
+        expected_entry_blocked: bool,
     ) -> None:
         guard = MockStalenessGuard(clock=sim_clock_midday)
         last_msg = sim_clock_midday.now() - timedelta(seconds=ws_silence)
@@ -437,12 +446,18 @@ class TestFeature16SymbolFreshnessGuard:
         ],
     )
     def test_symbol_freshness_within_tau(
-        self, sim_clock_midday: SimulatedClock, trade_age_secs: int, quote_age_secs: int, expected_fresh: bool
+        self,
+        sim_clock_midday: SimulatedClock,
+        trade_age_secs: int,
+        quote_age_secs: int,
+        expected_fresh: bool,
     ) -> None:
         guard = MockStalenessGuard(clock=sim_clock_midday)
         tau = timedelta(seconds=180)  # 3 minutes
 
-        last_update = sim_clock_midday.now() - timedelta(seconds=min(trade_age_secs, quote_age_secs))
+        last_update = sim_clock_midday.now() - timedelta(
+            seconds=min(trade_age_secs, quote_age_secs)
+        )
         is_fresh, reason = guard.check_symbol_freshness("SPY", last_update, tau)
         assert is_fresh == expected_fresh
         assert reason == "OK"
@@ -454,11 +469,11 @@ class TestFeature17CalibratedThresholdEngine:
     @pytest.mark.parametrize(
         ("p99_gap", "expected_tau_secs"),
         [
-            (60.0, 180.0),    # Below 3m min -> clamps to 180s
-            (120.0, 180.0),   # Below 3m min -> clamps to 180s
-            (240.0, 240.0),   # In range -> uses 240s
-            (450.0, 450.0),   # In range -> uses 450s
-            (800.0, 600.0),   # Above 10m max -> clamps to 600s
+            (60.0, 180.0),  # Below 3m min -> clamps to 180s
+            (120.0, 180.0),  # Below 3m min -> clamps to 180s
+            (240.0, 240.0),  # In range -> uses 240s
+            (450.0, 450.0),  # In range -> uses 450s
+            (800.0, 600.0),  # Above 10m max -> clamps to 600s
         ],
     )
     def test_calibrated_threshold_calculation(
@@ -501,10 +516,10 @@ class TestFeature19StatusesStreamSubscription:
         ("status_code", "expected_halt"),
         [
             ("T", False),  # Trading active
-            ("H", True),   # Trading halted
-            ("P", True),   # Trading paused
+            ("H", True),  # Trading halted
+            ("P", True),  # Trading paused
             ("R", False),  # Resumed
-            ("Q", True),   # Quote only / halted
+            ("Q", True),  # Quote only / halted
         ],
     )
     def test_exchange_halt_status_translation(self, status_code: str, expected_halt: bool) -> None:
@@ -537,7 +552,9 @@ class TestFeature20StrictEntryPriceSelector:
         ask = Decimal("500.00") + Decimal(str(round(500.0 * spread_bps / 10000, 4)))
         mid = (bid + ask) / Decimal("2")
 
-        quote = PriceQuote(symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=spread_bps, timestamp=now)
+        quote = PriceQuote(
+            symbol="SPY", bid=bid, ask=ask, midpoint=mid, spread_bps=spread_bps, timestamp=now
+        )
         trade = TradeQuote(symbol="SPY", price=Decimal("500.02"), size=100, timestamp=now)
 
         price, mode = guard.get_entry_price(quote, trade, tau)
@@ -602,7 +619,9 @@ class TestFeature23SMAIndicator:
     """Feature 23: SMA Indicator (5 tests)."""
 
     @pytest.mark.parametrize("period", [3, 5, 10, 15, 20])
-    def test_sma_mathematical_precision(self, reference_indicators: dict[str, Any], period: int) -> None:
+    def test_sma_mathematical_precision(
+        self, reference_indicators: dict[str, Any], period: int
+    ) -> None:
         prices = pd.Series(reference_indicators["prices"])
         sma = prices.rolling(window=period).mean()
 
@@ -617,7 +636,9 @@ class TestFeature24EMAIndicator:
     """Feature 24: EMA Indicator (5 tests)."""
 
     @pytest.mark.parametrize("period", [3, 5, 10, 15, 20])
-    def test_ema_mathematical_precision(self, reference_indicators: dict[str, Any], period: int) -> None:
+    def test_ema_mathematical_precision(
+        self, reference_indicators: dict[str, Any], period: int
+    ) -> None:
         prices = pd.Series(reference_indicators["prices"])
         alpha = 2.0 / (period + 1.0)
         ema = prices.ewm(alpha=alpha, adjust=False).mean()
@@ -631,7 +652,9 @@ class TestFeature25WilderRSIIndicator:
     """Feature 25: Wilder RSI Indicator (5 tests)."""
 
     @pytest.mark.parametrize("period", [2, 7, 14, 21, 28])
-    def test_rsi_bounds_and_structure(self, reference_indicators: dict[str, Any], period: int) -> None:
+    def test_rsi_bounds_and_structure(
+        self, reference_indicators: dict[str, Any], period: int
+    ) -> None:
         prices = pd.Series(reference_indicators["prices"])
         diff = prices.diff()
         gain = diff.clip(lower=0)
@@ -652,7 +675,9 @@ class TestFeature26WilderATRIndicator:
     """Feature 26: Wilder ATR Indicator (5 tests)."""
 
     @pytest.mark.parametrize("period", [5, 7, 10, 14, 20])
-    def test_atr_positive_and_smoothed(self, reference_indicators: dict[str, Any], period: int) -> None:
+    def test_atr_positive_and_smoothed(
+        self, reference_indicators: dict[str, Any], period: int
+    ) -> None:
         high = pd.Series(reference_indicators["highs"])
         low = pd.Series(reference_indicators["lows"])
         close = pd.Series(reference_indicators["prices"])
@@ -670,7 +695,9 @@ class TestFeature27PercentageReturns:
     """Feature 27: Percentage Returns (5 tests)."""
 
     @pytest.mark.parametrize("periods", [1, 2, 3, 5, 10])
-    def test_percentage_returns_calculation(self, reference_indicators: dict[str, Any], periods: int) -> None:
+    def test_percentage_returns_calculation(
+        self, reference_indicators: dict[str, Any], periods: int
+    ) -> None:
         prices = pd.Series(reference_indicators["prices"])
         returns = prices.pct_change(periods=periods)
 
@@ -730,7 +757,9 @@ class TestFeature30PrecisionFixtureValidator:
         "indicator_name",
         ["sma_5", "sma_20", "ema_5", "ema_20", "atr_14"],
     )
-    def test_oracle_fixture_comparison(self, reference_indicators: dict[str, Any], indicator_name: str) -> None:
+    def test_oracle_fixture_comparison(
+        self, reference_indicators: dict[str, Any], indicator_name: str
+    ) -> None:
         oracle_vals = reference_indicators[indicator_name]
         prices = pd.Series(reference_indicators["prices"])
 
@@ -745,7 +774,9 @@ class TestFeature30PrecisionFixtureValidator:
         else:
             high = pd.Series(reference_indicators["highs"])
             low = pd.Series(reference_indicators["lows"])
-            tr = pd.concat([high - low, (high - prices.shift(1)).abs(), (low - prices.shift(1)).abs()], axis=1).max(axis=1)
+            tr = pd.concat(
+                [high - low, (high - prices.shift(1)).abs(), (low - prices.shift(1)).abs()], axis=1
+            ).max(axis=1)
             computed = tr.ewm(alpha=1.0 / 14, adjust=False).mean().tolist()
 
         # Validate with <= 1e-6 tolerance
@@ -786,15 +817,19 @@ class TestFeature32EarlyCloseSessionHandler:
     @pytest.mark.parametrize(
         ("session_date", "is_early", "expected_close_hour_utc"),
         [
-            (date(2026, 11, 27), True, 18),   # Black Friday early close (13:00 ET = 18:00 UTC)
-            (date(2026, 9, 18), False, 20),   # Regular Friday close (16:00 ET = 20:00 UTC)
-            (date(2026, 9, 21), False, 20),   # Regular Monday close
+            (date(2026, 11, 27), True, 18),  # Black Friday early close (13:00 ET = 18:00 UTC)
+            (date(2026, 9, 18), False, 20),  # Regular Friday close (16:00 ET = 20:00 UTC)
+            (date(2026, 9, 21), False, 20),  # Regular Monday close
             (date(2026, 11, 26), False, 20),  # Thanksgiving Thursday (no early close day)
             (date(2026, 11, 30), False, 20),  # Cyber Monday regular close
         ],
     )
     def test_early_close_detection(
-        self, sim_clock: SimulatedClock, session_date: date, is_early: bool, expected_close_hour_utc: int
+        self,
+        sim_clock: SimulatedClock,
+        session_date: date,
+        is_early: bool,
+        expected_close_hour_utc: int,
     ) -> None:
         provider = MockAlpacaProvider(clock=sim_clock)
         cal = provider.get_calendar(session_date, session_date)
@@ -885,7 +920,7 @@ class TestFeature36FinnhubFailClosedGuard:
             (1, False),  # 1 day old cache -> allowed
             (2, False),  # 2 days old cache -> allowed
             (3, False),  # 3 days old cache -> boundary allowed
-            (4, True),   # 4 days old cache -> fail closed blocked
+            (4, True),  # 4 days old cache -> fail closed blocked
             (10, True),  # 10 days old cache -> blocked
         ],
     )
@@ -914,8 +949,8 @@ class TestFeature37EarningsTradingBlocker:
             (10, False),
             (5, False),
             (3, False),
-            (2, True),   # 2 trading days prior -> blocked
-            (1, True),   # 1 trading day prior -> blocked
+            (2, True),  # 2 trading days prior -> blocked
+            (1, True),  # 1 trading day prior -> blocked
         ],
     )
     def test_earnings_lead_time_blocking(
@@ -962,10 +997,10 @@ class TestFeature39MacroWindowFilter:
         ("offset_minutes", "expected_blocked"),
         [
             (-45, False),  # 45m before -> clear
-            (-20, True),   # 20m before -> within 30m window, blocked
-            (0, True),     # At announcement -> blocked
-            (25, True),    # 25m after -> within 30m window, blocked
-            (40, False),   # 40m after -> clear
+            (-20, True),  # 20m before -> within 30m window, blocked
+            (0, True),  # At announcement -> blocked
+            (25, True),  # 25m after -> within 30m window, blocked
+            (40, False),  # 40m after -> clear
         ],
     )
     def test_macro_blackout_window(
@@ -973,7 +1008,9 @@ class TestFeature39MacroWindowFilter:
     ) -> None:
         filter_eng = MockMacroFilter(clock=sim_clock)
         event_time = sim_clock.now()
-        filter_eng.load_events([{"name": "CPI", "type": "CPI", "timestamp": event_time, "impact": "high"}])
+        filter_eng.load_events(
+            [{"name": "CPI", "type": "CPI", "timestamp": event_time, "impact": "high"}]
+        )
 
         query_time = event_time + timedelta(minutes=offset_minutes)
         blocked, _ = filter_eng.is_macro_window_active(query_time, strategy_type="intraday")
@@ -990,7 +1027,7 @@ class TestFeature40MacroCalendarExpiryMonitor:
             (45, False),
             (31, False),
             (30, False),
-            (25, True),   # Horizon < 30 days -> trigger alert
+            (25, True),  # Horizon < 30 days -> trigger alert
         ],
     )
     def test_calendar_expiry_alert(
@@ -998,7 +1035,9 @@ class TestFeature40MacroCalendarExpiryMonitor:
     ) -> None:
         filter_eng = MockMacroFilter(clock=sim_clock)
         now = sim_clock.now()
-        filter_eng.load_events([{"name": "FOMC", "timestamp": now + timedelta(days=remaining_horizon_days)}])
+        filter_eng.load_events(
+            [{"name": "FOMC", "timestamp": now + timedelta(days=remaining_horizon_days)}]
+        )
 
         needs_alert, days = filter_eng.check_calendar_expiry(now, horizon_days=30)
         assert needs_alert == expected_alert
@@ -1010,10 +1049,10 @@ class TestFeature41OpenWindowFilter:
     @pytest.mark.parametrize(
         ("minute_et", "strategy_allows_open", "expected_blocked"),
         [
-            (31, False, True),   # 9:31 ET standard strategy -> blocked
-            (45, False, True),   # 9:45 ET standard strategy -> blocked
-            (59, False, True),   # 9:59 ET standard strategy -> blocked
-            (35, True, False),   # 9:35 ET S4 breakout (allows_open_window=True) -> allowed
+            (31, False, True),  # 9:31 ET standard strategy -> blocked
+            (45, False, True),  # 9:45 ET standard strategy -> blocked
+            (59, False, True),  # 9:59 ET standard strategy -> blocked
+            (35, True, False),  # 9:35 ET S4 breakout (allows_open_window=True) -> allowed
             (61, False, False),  # 10:01 ET standard strategy -> allowed
         ],
     )
@@ -1033,10 +1072,10 @@ class TestFeature42CloseWindowFilter:
         ("minute_et", "is_closing_exit", "expected_blocked"),
         [
             (45, False, False),  # 15:45 ET standard entry -> allowed
-            (51, False, True),   # 15:51 ET standard entry -> blocked (last 10m)
-            (55, False, True),   # 15:55 ET standard entry -> blocked (last 10m)
-            (58, True, False),   # 15:58 ET intraday MOC exit -> allowed
-            (59, False, True),   # 15:59 ET standard entry -> blocked
+            (51, False, True),  # 15:51 ET standard entry -> blocked (last 10m)
+            (55, False, True),  # 15:55 ET standard entry -> blocked (last 10m)
+            (58, True, False),  # 15:58 ET intraday MOC exit -> allowed
+            (59, False, True),  # 15:59 ET standard entry -> blocked
         ],
     )
     def test_market_close_window_gating(

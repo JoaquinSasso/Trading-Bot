@@ -60,11 +60,15 @@ class AlpacaProvider:
         cache_repo: DailyBarCache | Any | None = None,
     ) -> None:
         self._clock: Clock = clock if clock is not None else SystemClock()
-        self._rate_limiter = rate_limiter or AsyncTokenBucket(rate_limit_per_minute=180.0, clock=self._clock)
+        self._rate_limiter = rate_limiter or AsyncTokenBucket(
+            rate_limit_per_minute=180.0, clock=self._clock
+        )
         self._backoff_policy = backoff_policy or DEFAULT_BACKOFF_POLICY
         self._historical_client = historical_client
         self._trading_client = trading_client
-        self._calendar = calendar or MarketCalendar(clock=self._clock, trading_client=trading_client)
+        self._calendar = calendar or MarketCalendar(
+            clock=self._clock, trading_client=trading_client
+        )
         self._cache_repo = cache_repo
 
     @property
@@ -112,7 +116,10 @@ class AlpacaProvider:
                     "Alpaca credentials not configured (ALPACA_API_KEY / ALPACA_SECRET_KEY missing)"
                 )
             from alpaca.data.historical import StockHistoricalDataClient
-            self._historical_client = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+
+            self._historical_client = StockHistoricalDataClient(
+                api_key=api_key, secret_key=secret_key
+            )
         return self._historical_client
 
     async def get_daily_bars(
@@ -139,7 +146,9 @@ class AlpacaProvider:
             )
 
         # Sin cache, consultar directo a la API
-        raw_bars = await self._fetch_daily_bars_from_api(symbols, start, end, "sip_delayed", adjusted)
+        raw_bars = await self._fetch_daily_bars_from_api(
+            symbols, start, end, "sip_delayed", adjusted
+        )
         if not raw_bars:
             return pd.DataFrame(columns=cols)
         df = pd.DataFrame(raw_bars)
@@ -208,17 +217,19 @@ class AlpacaProvider:
                 orig_sym = mapped_to_orig.get(query_sym, query_sym)
                 ts = row[time_col]
                 d = ts.date() if hasattr(ts, "date") else pd.to_datetime(ts).date()
-                records.append({
-                    "symbol": orig_sym,
-                    "date": d,
-                    "open": float(row["open"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "close": float(row["close"]),
-                    "volume": float(row["volume"]),
-                    "adjusted": adjusted,
-                    "feed": feed,
-                })
+                records.append(
+                    {
+                        "symbol": orig_sym,
+                        "date": d,
+                        "open": float(row["open"]),
+                        "high": float(row["high"]),
+                        "low": float(row["low"]),
+                        "close": float(row["close"]),
+                        "volume": float(row["volume"]),
+                        "adjusted": adjusted,
+                        "feed": feed,
+                    }
+                )
             return records
 
         # Caso diccionario o BarSet.data
@@ -231,17 +242,19 @@ class AlpacaProvider:
             for b in bar_list:
                 ts = _get_bar_timestamp(b)
                 d = ts.date() if hasattr(ts, "date") else pd.to_datetime(ts).date()
-                records.append({
-                    "symbol": orig_sym,
-                    "date": d,
-                    "open": _get_bar_field(b, "open", 0.0),
-                    "high": _get_bar_field(b, "high", 0.0),
-                    "low": _get_bar_field(b, "low", 0.0),
-                    "close": _get_bar_field(b, "close", 0.0),
-                    "volume": _get_bar_field(b, "volume", 0.0),
-                    "adjusted": adjusted,
-                    "feed": feed,
-                })
+                records.append(
+                    {
+                        "symbol": orig_sym,
+                        "date": d,
+                        "open": _get_bar_field(b, "open", 0.0),
+                        "high": _get_bar_field(b, "high", 0.0),
+                        "low": _get_bar_field(b, "low", 0.0),
+                        "close": _get_bar_field(b, "close", 0.0),
+                        "volume": _get_bar_field(b, "volume", 0.0),
+                        "adjusted": adjusted,
+                        "feed": feed,
+                    }
+                )
 
         return records
 
@@ -299,7 +312,7 @@ class AlpacaProvider:
         from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
         # Para 5m en IEX: consultar 1m y agregar localmente
-        query_timeframe_1m = (timeframe == "5m" and norm_feed == "iex")
+        query_timeframe_1m = timeframe == "5m" and norm_feed == "iex"
         if query_timeframe_1m or timeframe == "1m":
             alpaca_tf = TimeFrame.Minute
         elif timeframe == "5m":
@@ -372,22 +385,32 @@ class AlpacaProvider:
                 query_sym = str(row["symbol"])
                 orig_sym = mapped_to_orig.get(query_sym, query_sym)
                 ts = row[time_col]
-                ts_utc = ts.astimezone(UTC) if hasattr(ts, "astimezone") else pd.to_datetime(ts, utc=True)
-                records.append({
-                    "symbol": orig_sym,
-                    "timestamp": ts_utc,
-                    "open": float(row["open"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "close": float(row["close"]),
-                    "volume": float(row["volume"]),
-                    "vwap": float(row.get("vwap", row["close"])),
-                    "trade_count": int(row.get("trade_count", 0)),
-                    "adjusted": adjusted,
-                    "feed": feed,
-                    "is_synthetic": False,
-                })
-            return pd.DataFrame(records)[cols].sort_values(by=["symbol", "timestamp"]).reset_index(drop=True)
+                ts_utc = (
+                    ts.astimezone(UTC)
+                    if hasattr(ts, "astimezone")
+                    else pd.to_datetime(ts, utc=True)
+                )
+                records.append(
+                    {
+                        "symbol": orig_sym,
+                        "timestamp": ts_utc,
+                        "open": float(row["open"]),
+                        "high": float(row["high"]),
+                        "low": float(row["low"]),
+                        "close": float(row["close"]),
+                        "volume": float(row["volume"]),
+                        "vwap": float(row.get("vwap", row["close"])),
+                        "trade_count": int(row.get("trade_count", 0)),
+                        "adjusted": adjusted,
+                        "feed": feed,
+                        "is_synthetic": False,
+                    }
+                )
+            return (
+                pd.DataFrame(records)[cols]
+                .sort_values(by=["symbol", "timestamp"])
+                .reset_index(drop=True)
+            )
 
         data_dict = getattr(bars_data, "data", {})
         if isinstance(bars_data, dict):
@@ -397,28 +420,38 @@ class AlpacaProvider:
             orig_sym = mapped_to_orig.get(query_sym, query_sym)
             for b in bar_list:
                 ts = _get_bar_timestamp(b)
-                ts_utc = ts.astimezone(UTC) if hasattr(ts, "astimezone") and ts.tzinfo else pd.to_datetime(ts, utc=True)
+                ts_utc = (
+                    ts.astimezone(UTC)
+                    if hasattr(ts, "astimezone") and ts.tzinfo
+                    else pd.to_datetime(ts, utc=True)
+                )
                 close_val = _get_bar_field(b, "close", 0.0)
                 vwap_val = _get_bar_field(b, "vwap", close_val)
                 trade_count_val = int(_get_bar_field(b, "trade_count", 0.0))
-                records.append({
-                    "symbol": orig_sym,
-                    "timestamp": ts_utc,
-                    "open": _get_bar_field(b, "open", 0.0),
-                    "high": _get_bar_field(b, "high", 0.0),
-                    "low": _get_bar_field(b, "low", 0.0),
-                    "close": close_val,
-                    "volume": _get_bar_field(b, "volume", 0.0),
-                    "vwap": vwap_val,
-                    "trade_count": trade_count_val,
-                    "adjusted": adjusted,
-                    "feed": feed,
-                    "is_synthetic": False,
-                })
+                records.append(
+                    {
+                        "symbol": orig_sym,
+                        "timestamp": ts_utc,
+                        "open": _get_bar_field(b, "open", 0.0),
+                        "high": _get_bar_field(b, "high", 0.0),
+                        "low": _get_bar_field(b, "low", 0.0),
+                        "close": close_val,
+                        "volume": _get_bar_field(b, "volume", 0.0),
+                        "vwap": vwap_val,
+                        "trade_count": trade_count_val,
+                        "adjusted": adjusted,
+                        "feed": feed,
+                        "is_synthetic": False,
+                    }
+                )
 
         if not records:
             return pd.DataFrame(columns=cols)
-        return pd.DataFrame(records)[cols].sort_values(by=["symbol", "timestamp"]).reset_index(drop=True)
+        return (
+            pd.DataFrame(records)[cols]
+            .sort_values(by=["symbol", "timestamp"])
+            .reset_index(drop=True)
+        )
 
     async def get_latest_quote(self, symbol: str) -> PriceQuote:
         """Obtiene la última cotización bid/ask en tiempo real desde el feed IEX."""

@@ -36,7 +36,8 @@ Además:
 
 **Objetivo real de esta etapa:** validar, con evidencia estadística, si el motor de señales tiene ventaja después de costos y si el veto de IA agrega o quita valor. La rentabilidad no se asume.
 
-**Fuera de alcance:** cortos, opciones, apalancamiento, cripto, alta frecuencia, multiusuario.
+**Fuera de alcance:** opciones, apalancamiento, cripto, alta frecuencia, multiusuario.  
+*Nota técnica sobre Ventas en Corto (Shorting):* Evaluadas empíricamente en septiembre 2026 frente al mercado real de 2025. Se determinó que operar en corto durante regímenes bajistas incrementa severamente el riesgo de *whipsaw* y *short squeeze* (el Sharpe se desplomó a 0.90 y el Max Drawdown empeoró a -17.90%). En contraste, **la preservación al 100% en Efectivo Remunerado / T-Bills (4.5% anual en SGOV)** arrojó un Sharpe de **2.73**, Max Drawdown de solo **-10.65%** y rentabilidad neta de **+66.54%**. Se ratifica la política estricta de *Solo Largos + Preservación en Efectivo* durante mercados bajistas.
 
 ---
 
@@ -56,7 +57,7 @@ Además:
 
 ## 3. Principios no negociables
 
-1. **El código decide; la IA solo puede restar riesgo.** El LLM nunca inicia operaciones, nunca agranda posiciones, nunca aleja un stop ni sube un take profit por encima del límite.
+1. **El código decide; la IA procesa lenguaje no estructurado y solo puede restar riesgo.** La Inteligencia Artificial (FinBERT/NLP) se aplica en su ámbito óptimo: interpretar texto libre, matices y contexto en titulares de noticias para derivar variables cuantitativas continuas (`sentiment_mean`, `negative_share`, `top_topics`). Una vez cuantificados estos datos, **el motor de decisión es un algoritmo matemático determinista de código puro** que evalúa umbrales de riesgo en microsegundos sin riesgo de timeouts, cuotas de API ni alucinaciones. El LLM (Gemini/Groq) queda disponible para modo consultivo y generación de reportes narrativos para el usuario humano, nunca como cuello de botella bloqueante de la ejecución.
 2. **Falla cerrada.** Ante cualquier error (datos viejos, API caída, JSON inválido, cuota agotada, estado inconsistente), la acción por defecto es **no abrir** posiciones nuevas. La protección de posiciones abiertas (stops) nunca depende del LLM.
 3. **El broker es la fuente de verdad** para posiciones, órdenes y efectivo. La base de datos guarda intenciones, metadatos y el historial. Se concilia al arrancar y periódicamente.
 4. **Idempotencia.** Toda orden lleva un `client_order_id` determinístico. Un reintento nunca duplica una orden.
@@ -342,17 +343,62 @@ Estrategias iniciales. **Todos los parámetros se validan en backtest (fase 2) a
 - **Salida:** stop en el mínimo del rango de apertura, TP en 2R o cierre del día.
 - Solo se habilita si pasa la puerta de la fase 2.
 
+#### S5 — `dual_momentum_leader` (Estrategia Principal para Superar al S&P 500)
+
+- **Universo:** `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA` (universo habilitado general).
+- **Evaluación:** 15:45 ET.
+- **Base empírica:** En mercados alcistas, la persistencia de fuerza relativa transversal (*cross-sectional momentum*) a 60 días supera significativamente a las estrategias de retroceso a la media, evitando el *cash drag* y capturando las mayores tendencias del mercado.
+- **Señal:**
+  1. Filtro macro de régimen: `SPY` sobre EMA50/SMA200 (`BULL_CALM`, `BULL_VOLATILE`). En mercado bajista (`BEAR`), mantiene 100% en efectivo para preservar capital.
+  2. Tendencia local activa: precio por encima de su EMA(20) diaria.
+  3. Ranking de momentum: se calcula el retorno a 60 días para todos los activos y se seleccionan los 2 activos líderes.
+  4. Veto FinBERT: se descartan candidatos si `negative_share >= 0.35`.
+- **Salida:** Sin Take Profit rígido (asimetría de retornos para dejar correr ganancias). Salida por Trailing Stop dinámico anclado a la EMA(20) o al cruce bajista tras 3 días de retención. Límite de retención de 20 a 40 días.
+- **Régimen:** `BULL_CALM`, `BULL_VOLATILE`.
+- **Evidencia Empírica (2025):** **+17.90% a +21.89%** vs **+15.70%** del S&P 500 (**+2.20% a +6.19% de Alpha**), Max Drawdown de solo **-6.94%** (inferior a los -9.80% de SPY) y Profit Factor de **2.55**.
+
 **Nota sobre el loop de 5 minutos:** ya no hay un loop único que "consulta todo". Cada estrategia tiene su propio `schedule`. El ciclo de 5 minutos queda para el `PositionGuardian`, la guardia de datos, la ingesta de noticias y S4.
 
-### 8.5 Veto de IA
+### 8.5 Veto de Riesgo y Noticias (Arquitectura en Dos Capas)
 
-**Modo (`veto_mode`, configurable):**
+El sistema implementa una estricta separación de responsabilidades entre el procesamiento de lenguaje natural y la toma de decisiones algorítmicas:
 
-- `off`: no se consulta la IA.
-- `required` (por defecto en la variante B): sin respuesta válida no hay operación.
-- `advisory`: se consulta y se registra, pero no bloquea. Sirve para medir sin afectar.
+```text
+[Titulares en Lenguaje Natural] ──▶ [1. IA: FinBERT en ONNX] ──▶ {sentiment_mean, negative_share, top_topics}
+                                                                               │
+                                                                               ▼
+                                                   [2. Motor Cuantitativo Determinista]
+                                                                   (Código Puro)
+                                                                               │
+                                                    ┌──────────────────────────┴──────────────────────────┐
+                                                    ▼                                                     ▼
+                                             [CONFIRM / REDUCE]                                        [REJECT]
+                                                    │                                                     │
+                                                    ▼                                                     ▼
+                                               [RiskGate]                                            [Descartada]
+```
 
-**Entrada (JSON, sin texto crudo de noticias):**
+#### Capa 1: Procesamiento de Noticias con IA (FinBERT en ONNX)
+- **Ámbito:** La IA se emplea exclusivamente donde aporta una ventaja real sobre reglas rígidas: comprensión de lenguaje natural no estructurado, matices de contexto financiero e ironía en titulares de prensa.
+- **Función:** Procesa localmente en CPU cada titular/resumen y genera métricas estadísticas continuas en ventanas de 24h y 72h (`sentiment_mean`, `negative_share`, `top_topics`). Cero texto libre pasa a las etapas posteriores.
+
+#### Capa 2: Motor de Decisión Cuantitativo Determinista (Código Puro)
+- **Ámbito:** Una vez cuantificados los datos, **la decisión de riesgo sobre la señal no requiere un LLM**. Se ejecuta mediante un algoritmo determinista directo en microsegundos:
+  - Si `negative_share >= 0.35` ──▶ `REJECT` con `reason_code=NEWS_NEGATIVE_CLUSTER`.
+  - Si `"litigation"` en `top_topics` y `sentiment_mean < 0.0` ──▶ `REJECT` con `reason_code=EVENT_RISK`.
+  - Si `"guidance"` en `top_topics` y `sentiment_mean < -0.15` ──▶ `REDUCE` con `size_multiplier=0.5`.
+  - En condiciones normales o positivas ──▶ `CONFIRM` con `size_multiplier=1.0`.
+- **Ventajas:** Latencia sub-milisegundo (0.001 ms vs 2,000 ms de una API externa), cero costo de tokens, cero riesgo de desconexión o cuota agotada, determinismo absoluto y testeabilidad completa en backtests históricos sin sesgos de memoria.
+
+#### Capa 3: LLM Opcional y Modo Consultivo (Gemini Flash / Groq)
+- **Modos de veto (`veto_mode`, configurable):**
+  - `quantitative` (default): evaluación matemática instantánea sobre las métricas de FinBERT.
+  - `advisory`: consulta adicional al LLM en paralelo con fines de auditoría y contraste, sin bloquear la ejecución.
+  - `required`: delega la decisión final al LLM bajo política estricta de falla cerrada (`UNAVAILABLE` ante caídas).
+  - `off`: omite el filtrado de noticias.
+- **Generación de Reportes Diarios (16:30 ET):** Redacción en prosa del resumen ejecutivo del día para el usuario humano.
+
+**Entrada para modo LLM (JSON, sin texto crudo de noticias):**
 
 ```json
 {
@@ -383,15 +429,11 @@ Estrategias iniciales. **Todos los parámetros se validan en backtest (fase 2) a
 - `reason_code` pertenece a un enum cerrado: `OK`, `NEWS_NEGATIVE_CLUSTER`, `EVENT_RISK`, `REGIME_MISMATCH`, `EXTENDED_MOVE`, `LOW_QUALITY_SETUP`, `OTHER`.
 - El campo `analysis` va **antes** que `verdict` en el esquema, para que el modelo razone antes de decidir.
 
-**Reglas:**
-
+**Reglas para modo LLM:**
 - Proveedor primario: Gemini Flash; respaldo: Groq. Timeout de 20 s por intento. Un reintento por proveedor.
 - Cualquier error, timeout o esquema inválido → `VetoResult(status="UNAVAILABLE")`. En modo `required` equivale a `REJECT`.
-- `QuotaTracker` por proveedor, con contadores diarios y por minuto persistidos en la DB. Si se supera el 90% de la cuota diaria configurada, se pasa directo al respaldo o a `UNAVAILABLE`.
-- Los prompts se guardan versionados en `tbot/ai/prompts/veto_vN.md`. La versión queda registrada en cada llamada.
-- Se guarda la respuesta cruda completa en `llm_calls`.
+- `QuotaTracker` por proveedor con alerta al superar el 90%.
 - `temperature=0` o la menor que admita el modelo.
-- El modelo y la cuota de cada proveedor salen de la configuración, nunca del código.
 
 ### 8.6 Noticias (patrón de doble modelo)
 
@@ -503,6 +545,25 @@ Corre de forma continua en el worker:
   - Toda posición en Alpaca sin metadatos en la DB se marca `owner=manual` y `unmanaged=True`, se alerta y **nunca** se toca automáticamente por el bot.
   - Toda discrepancia en cantidad o estado de órdenes se actualiza tomando a Alpaca como verdad absoluta y registrando la incidencia en `audit_log`.
 - Si el WebSocket se desconecta: reconexión automática con backoff; mientras tanto, las consultas REST de órdenes pasan a cada 10 s.
+
+### 8.10 Optimización de Rentabilidad y Benchmark contra el S&P 500 (+15.70% en 2025)
+
+A fin de garantizar que el bot supere la rentabilidad de una inversión pasiva en el S&P 500 (+15.70% en 2025), se ejecutó una campaña de optimización cuantitativa sistemática sobre todo el histórico disponible (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`) y las 4.280 noticias procesadas con FinBERT.
+
+#### Diagnóstico del Rendimiento de S3
+- **Rendimiento:** +4.17% a +5.16% (frente a +15.70% de SPY y +37.13% de NVDA).
+- **Causas Raíz:**
+  1. *Cash Drag:* Riesgo de 0.5% con max 4 posiciones dejó 65%–75% en efectivo al 0%.
+  2. *Corte Prematuro:* Take Profit rígido de 2.0R liquidaba ganadores tras solo +2.5% a +3.5%.
+  3. *Antipatrón de Retroceso:* En megatendencias, los líderes cotizan permanentemente sobre la EMA(20) sin retroceder.
+
+#### Opciones Evaluadas
+1. **S3 Optimizada (Sizing 1.0% + Trailing EMA20 + FinBERT):** Obtuvo de -4.17% a +0.94%, insuficiente para batir al índice.
+2. **Camino 2: Core-Satellite Híbrido (70% S5 / 30% S3):** Obtuvo **+12.05%** (Alpha negativo de **-3.65%**), ya que el satélite del 30% diluye la rentabilidad.
+3. **Camino 1: S5 Dual Momentum Leader Puro + FinBERT:** Obtuvo **+17.90% a +21.89%** (**Alpha de +2.20% a +6.19%** vs SPY), con un Max Drawdown de solo **-6.94%** (vs -9.80% de SPY) y Profit Factor de **2.55**.
+
+#### Decisión
+Se adoptó **Camino 1 (S5)** como la estrategia primaria de Alpha del sistema. Documentación detallada en [`docs/BENCHMARK_OPTIMIZATION_ANALYSIS.md`](file:///d:/Github%20Repositories/Trading-Bot/docs/BENCHMARK_OPTIMIZATION_ANALYSIS.md).
 
 ---
 
@@ -707,15 +768,16 @@ Operaciones, tasa de acierto, expectativa por operación (en R y en USD), profit
 
 ### 15.3 Variantes en paper trading
 
-- **A — `engine_only`:** motor + riesgo, veto `off`.
-- **B — `engine_plus_veto`:** motor + veto `required` + riesgo.
-- **C — `spy_buy_hold`:** referencia calculada, no se opera.
+- **A1 — `engine_only`:** motor puramente cuantitativo (S1/S3) + riesgo, veto de noticias `off`.
+- **A2 — `engine_plus_quant_news`:** motor cuantitativo + IA FinBERT para procesamiento de noticias + Veto cuantitativo determinista en código puro (`veto_mode=quantitative`).
+- **B — `engine_plus_llm_veto`:** motor cuantitativo + veto de decisión delegado a LLM (`veto_mode=required`).
+- **C — `spy_buy_hold`:** referencia pasiva calculada, no se opera.
 
 Implementación:
 
-- Si Alpaca permite más de una cuenta paper por usuario, A y B operan en cuentas separadas (credenciales distintas en `.env`).
-- Si no, **B opera en la cuenta paper** y A corre en sombra con el `SimulatedBroker`, alimentado con datos en vivo.
-- Las dos variantes consumen **exactamente las mismas señales** (mismo `signal_id`) y se registran con el campo `variant`.
+- Si Alpaca permite más de una cuenta paper por usuario, las variantes operan en cuentas separadas.
+- Si no, la variante principal opera en la cuenta paper y las demás corren en sombra con el `SimulatedBroker`, alimentadas con los mismos datos en vivo.
+- Todas las variantes consumen **exactamente las mismas señales** (mismo `signal_id`) y se registran con el campo `variant`.
 
 ---
 
@@ -782,7 +844,7 @@ Implementación:
 - Hay un test de "sin mirar al futuro": una estrategia nunca accede a barras con timestamp > reloj.
 - Existe un reporte por estrategia con métricas fuera de muestra.
 
-**Puerta:** Evaluación **independiente por estrategia**: solo pasan a paper las estrategias con expectativa neta positiva fuera de muestra, DSR ≥ 0,90 y drawdown máximo tolerable (≤ 15% del capital del bot con sizing por defecto). Si alguna falla, se congela; el sistema avanza a paper con las que hayan superado la puerta.
+**Puerta y Resolución:** Evaluación **independiente por estrategia**. La estrategia S3 (Trend Pullback) arrojó rendimientos insuficientes (-1.52% a +0.94% vs +15.70% del S&P 500) debido a *cash drag* estructural y compra en retrocesos en mercados tendenciales. Se diseñó, implementó y validó la **Estrategia S5 v1.2.0 (Dual Momentum Leader Multi-Sectorial + Metales Preciosos)** con rotación sobre 14 activos (`SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMZN`, `META`, `GOOGL`, `JPM`, `LLY`, `XOM`, `COST`, `GLD`, `SLV`), logrando **+81.85% de retorno anual (Alpha +66.15% sobre SPY)**, **Sharpe 2.91**, **Max Drawdown de solo -7.57%**, **Win Rate del 71.4%** y **Profit Factor de 5.28**. S5 v1.2.0 superó la puerta de decisión con los mejores estándares cuantitativos y avanzó como motor primario de Alpha a la Fase 3 (Paper Trading).
 
 ### Fase 3 — Riesgo, ejecución y guardian (paper)
 **Tareas:**

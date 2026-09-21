@@ -1,10 +1,11 @@
 """Initial schema with all 22 system tables
 
 Revision ID: 0001_initial_schema
-Revises: 
+Revises:
 Create Date: 2026-09-19 22:30:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -205,7 +206,9 @@ def upgrade() -> None:
         sa.Column("stop_price", sa.Numeric(precision=12, scale=4), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("filled_qty", sa.Numeric(precision=12, scale=4), nullable=False, server_default="0"),
+        sa.Column(
+            "filled_qty", sa.Numeric(precision=12, scale=4), nullable=False, server_default="0"
+        ),
         sa.Column("avg_fill_price", sa.Numeric(precision=12, scale=4), nullable=True),
     )
     op.create_index("ix_orders_broker_order_id", "orders", ["broker_order_id"])
@@ -242,7 +245,9 @@ def upgrade() -> None:
         sa.Column("pnl", sa.Numeric(precision=12, scale=2), nullable=False),
         sa.Column("pnl_r", sa.Numeric(precision=8, scale=2), nullable=True),
         sa.Column("fees_est", sa.Numeric(precision=8, scale=2), nullable=False, server_default="0"),
-        sa.Column("slippage_est", sa.Numeric(precision=8, scale=2), nullable=False, server_default="0"),
+        sa.Column(
+            "slippage_est", sa.Numeric(precision=8, scale=2), nullable=False, server_default="0"
+        ),
         sa.Column("exit_reason", sa.String(length=64), nullable=False),
         sa.Column("opened_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=False),

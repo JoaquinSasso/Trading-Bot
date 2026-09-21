@@ -58,8 +58,7 @@ def test_no_direct_datetime_now_in_codebase() -> None:
 
     assert not all_violations, (
         "Se encontraron llamadas directas no autorizadas a datetime.now()/utcnow(). "
-        "Todo módulo debe recibir una instancia de Clock inyectada:\n"
-        + "\n".join(all_violations)
+        "Todo módulo debe recibir una instancia de Clock inyectada:\n" + "\n".join(all_violations)
     )
 
 

@@ -51,8 +51,6 @@ if decimal.getcontext().prec < 50:
     decimal.getcontext().prec = 50
 
 
-
-
 class FeedHealthState(StrEnum):
     """Estados formales de salud del feed de datos en tiempo real (Nivel 1)."""
 
@@ -199,7 +197,6 @@ def _to_decimal(val: Any, name: str = "") -> Decimal | None:
     return None
 
 
-
 @dataclass
 class SymbolDataState:
     """Estado de frescura y cotizaciones por símbolo (Nivel 2)."""
@@ -256,7 +253,12 @@ class AnomalyDetector:
 
         if p_iex is None or c_sip is None:
             return False, "MISSING_PRICE_DATA"
-        if not p_iex.is_finite() or not c_sip.is_finite() or p_iex <= Decimal("0") or c_sip <= Decimal("0"):
+        if (
+            not p_iex.is_finite()
+            or not c_sip.is_finite()
+            or p_iex <= Decimal("0")
+            or c_sip <= Decimal("0")
+        ):
             return False, "INVALID_PRICE"
 
         with decimal.localcontext() as ctx:
@@ -276,7 +278,6 @@ class AnomalyDetector:
             if diff > threshold:
                 return False, "PRICE_ANOMALY"
             return True, "OK"
-
 
     def detect_anomaly(
         self,
@@ -447,7 +448,6 @@ class GlobalFeedMonitor:
         silence = (now - target_ts).total_seconds()
         return -MAX_FUTURE_TOLERANCE_SECONDS <= silence <= self._heartbeat_timeout
 
-
     def is_feed_healthy(self) -> bool:
         """Retorna True si el feed está completamente saludable."""
         return self.evaluate_state() == FeedHealthState.HEALTHY
@@ -594,7 +594,6 @@ class SymbolFreshnessMonitor:
             return True, "OK"
         return False, "POTENTIAL_HALT"
 
-
     def is_symbol_entry_allowed(self, symbol: str) -> tuple[bool, str]:
         """Gating de entrada específico por símbolo."""
         is_fresh, reason = self.check_symbol_freshness(symbol)
@@ -708,7 +707,6 @@ class StalenessGuard:
         else:
             with self._discard_lock:
                 self.discard_counts[key] = self.discard_counts.get(key, 0) + amount
-
 
     @property
     def global_monitor(self) -> GlobalFeedMonitor:
@@ -924,7 +922,6 @@ class StalenessGuard:
         is_sym_fresh, sym_reason = self.check_symbol_freshness(symbol, last_update, tau)
         if not is_sym_fresh:
             return None, False, sym_reason
-
 
         # 3. Resolución de precio de entrada sin forward-fill
         entry_price, price_mode = self.get_entry_price(quote, trade, tau)
