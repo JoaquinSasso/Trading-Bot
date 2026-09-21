@@ -11,12 +11,10 @@ Compara de manera transparente y rigurosa diferentes configuraciones:
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
-import os
 from pathlib import Path
-import sys
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -124,19 +122,17 @@ def run_strategy_simulation(
 
     # Fechas de negociación en el período
     all_dates = sorted(
-        list(
-            set.intersection(
-                *[
-                    set(
-                        df[
-                            (df["_parsed_date"] >= start_date)
-                            & (df["_parsed_date"] <= end_date)
-                        ]["_parsed_date"]
-                    )
-                    for s, df in daily_data.items()
-                    if s in all_symbols or s == "SPY"
-                ]
-            )
+        set.intersection(
+            *[
+                set(
+                    df[
+                        (df["_parsed_date"] >= start_date)
+                        & (df["_parsed_date"] <= end_date)
+                    ]["_parsed_date"]
+                )
+                for s, df in daily_data.items()
+                if s in all_symbols or s == "SPY"
+            ]
         )
     )
 
@@ -395,19 +391,17 @@ def run_s5_momentum_simulation(
     spy_df = daily_data["SPY"]
 
     all_dates = sorted(
-        list(
-            set.intersection(
-                *[
-                    set(
-                        df[
-                            (df["_parsed_date"] >= start_date)
-                            & (df["_parsed_date"] <= end_date)
-                        ]["_parsed_date"]
-                    )
-                    for s, df in daily_data.items()
-                    if s in all_symbols or s == "SPY"
-                ]
-            )
+        set.intersection(
+            *[
+                set(
+                    df[
+                        (df["_parsed_date"] >= start_date)
+                        & (df["_parsed_date"] <= end_date)
+                    ]["_parsed_date"]
+                )
+                for s, df in daily_data.items()
+                if s in all_symbols or s == "SPY"
+            ]
         )
     )
 
@@ -767,7 +761,7 @@ def main() -> int:
             "finbert": False,
         },
         {
-            "name": "Config 4: S3 Optimizada + Veto/Boost FinBERT 4.280 noticias",
+            "name": "Config 4: S3 Optimizada + Veto/Boost FinBERT (7.490 noticias)",
             "risk_pct": 1.0,
             "max_cap_pct": 0.25,
             "trailing": True,

@@ -12,10 +12,8 @@ Estrategia cuantitativa de asignación de capital diseñada para superar al S&P 
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
-
-import pandas as pd
 
 from tbot.indicators.pure import ema
 from tbot.regime.filter import MarketRegime

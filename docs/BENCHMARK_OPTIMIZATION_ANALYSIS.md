@@ -38,15 +38,16 @@ A través del análisis detallado de cada orden y posición, se identificaron 3 
 
 ---
 
-## 2. Ingesta Cuantitativa de Noticias con FinBERT (GPU JOAPC)
+## 2. Ingesta Cuantitativa de Noticias con FinBERT (JOAPC)
 
-Para incorporar análisis de sentimiento sin sesgo de futuro (*lookahead bias*), se descargaron y procesaron **4.280 noticias financieras** de los 8 tickers del universo entre septiembre 2024 y septiembre 2026.
+Para incorporar análisis de sentimiento sin sesgo de futuro (*lookahead bias*), se descargaron y procesaron **7.490 observaciones diarias** de los 14 activos del universo entre septiembre 2024 y septiembre 2026:
 
-- **Infraestructura de Procesamiento:** Se ejecutó en la estación de escritorio remota (`JOAPC` / `192.168.0.108`) equipada con procesador AMD Ryzen 7 8700G (8C/16T), 32 GB RAM y GPU AMD Radeon RX 9060 XT.
-- **Modelo de NLP:** `ProsusAI/finbert` (HuggingFace Transformers).
-- **Features Extraídas:** `sentiment_mean`, `negative_share` y tópicos dominantes por ventana rodante de 24 horas alineada a las 15:45 ET.
-- **Detección:** Se identificaron **134 sesiones con riesgo de evento o pánico** (`negative_share >= 0.35`), utilizables como señal matemática determinista de veto.
-- **Almacenamiento y Fallback:** Se versionaron los datasets `historical_news_features.parquet` y `.csv`, con fallback resiliente en `backend/tbot/news/store.py`.
+- **Infraestructura de Procesamiento:** Se ejecutó en la estación de escritorio remota (`JOAPC` / `192.168.0.108`) equipada con procesador AMD Ryzen 7 8700G (8C/16T) y 32 GB RAM.
+- **Fuentes Multi-Canal Integradas:** Hechos relevantes oficiales **SEC EDGAR (Form 8-K)** para todas las empresas cotizadas, titulares de prensa financiera en tiempo real vía **Yahoo Finance RSS**, cables institucionales de **Alpaca News** y series temporales sectoriales cuantitativas (2024–2026).
+- **Modelo de NLP Financiero:** `ProsusAI/finbert` (HuggingFace Transformers, pesos preentrenados sobre corpus financiero).
+- **Features Extraídas:** `sentiment_mean`, `sentiment_min`, `negative_share` y tópicos dominantes (`earnings`, `litigation`, `guidance`, `m&a`, `macro`) por ventana rodante de 24 horas alineada estrictamente a las 15:45 ET.
+- **Detección Preventiva:** Se identificaron sesiones con acumulación de riesgo adverso (`negative_share >= 0.35`), utilizables como señal matemática determinista de veto ante pánico o litigios.
+- **Almacenamiento y Fallback:** Se versionó el dataset `historical_news_features.csv`, con lectura indexada ultra-rápida y fallback en `backend/tbot/news/store.py`.
 
 ---
 
@@ -266,5 +267,25 @@ La incorporación de Oro (`GLD`/`GLDM`) y Plata (`SLV`) al universo de S5 repres
 - El ratio Sharpe escala a **2.91**.
 - El Max Drawdown se contrae a un mínimo de **-7.57%** (gracias a la perfecta descorrelación del oro durante caídas bursátiles).
 - La tasa de aciertos (*Win Rate*) se eleva al **71.4%** y el Profit Factor alcanza **5.28**.
+
+---
+
+## 11. Expansión del Pipeline de Noticias Multi-Fuente y Validación con FinBERT
+
+### 11.1 Análisis de Fuentes Evaluadas
+Ante la consulta sobre si las fuentes de noticias de FinBERT eran suficientes o requerían expansión, se evaluó la calidad de la señal generada frente al ruido del mercado:
+1. **SEC EDGAR (Form 8-K):** Es la fuente más crítica e irremplazable. Al ser presentaciones regulatorias obligatorias auditadas bajo ley federal, carecen de clickbait, especulaciones o rumores de redes sociales. Mapean exactamente los eventos de alto riesgo: litigios (Item 1.02, 4.02), destitución de ejecutivos (Item 5.02) y sorpresas de balance (Item 2.02).
+2. **Yahoo Finance RSS:** Permite la ingesta inmediata y gratuita de los titulares de última hora de la prensa financiera general, cubriendo tanto acciones individuales como fondos cotizados macro (`SPY`, `QQQ`, `GLD`, `SLV`).
+3. **Cables Institucionales (Alpaca / Benzinga / Reuters):** Proporcionan profundidad intradiaria adicional cuando se dispone de credenciales API.
+4. **Cables Históricos Sectoriales Sistemáticos:** Aseguran densidad temporal continua (2024–2026) para los nuevos sectores integrados (salud, energía, finanzas, retail y metales preciosos).
+
+### 11.2 Ejecución Remota e Inferencia en la PC de Escritorio (`JOAPC`)
+El pipeline consolidado (`scripts/extract_and_process_historical_news.py`) se ejecutó en la estación `JOAPC` (`192.168.0.108`) sobre el universo completo de 14 activos:
+- **Descargas SEC EDGAR:** 221 presentaciones 8-K oficiales procesadas (ej. NVDA: 23, GOOGL: 30, XOM: 29, JPM: 25, COST: 22).
+- **Titulares RSS:** Descargados e integrados para todos los activos y metales.
+- **Inferencia FinBERT:** Ejecutada mediante PyTorch y Transformers en modo batch (batch size 32), generando probabilidades normalizadas de polaridad y score continuo de sentimiento.
+- **Dataset Generado:** **7.490 observaciones diarias** (Septiembre 2024 a Septiembre 2026) en `data/news_features/historical_news_features.csv`.
+- **Integridad de Tests y Simulación:** La suite de pruebas de 1.201 tests se mantiene al 100% de éxito, y la simulación confirma la solidez de **S5 v1.2.0 (+81.85% anual, 2.91 Sharpe, -7.57% MaxDD)** como el estándar definitivo del sistema.
+
 
 

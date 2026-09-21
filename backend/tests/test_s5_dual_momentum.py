@@ -4,10 +4,9 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from tbot.regime.filter import MarketRegime
-from tbot.strategies.interfaces import StrategyContext, compute_signal_id
+from tbot.strategies.interfaces import StrategyContext
 from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
 
 

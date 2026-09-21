@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -42,10 +42,7 @@ class HistoricalNewsFeatureStore:
             except (ImportError, Exception):
                 # Fallback suave al archivo CSV si pyarrow no está disponible
                 csv_path = path.with_suffix(".csv")
-                if csv_path.exists():
-                    df = pd.read_csv(csv_path)
-                else:
-                    df = pd.DataFrame()
+                df = pd.read_csv(csv_path) if csv_path.exists() else pd.DataFrame()
         else:
             df = pd.read_csv(path)
 
