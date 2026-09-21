@@ -650,9 +650,10 @@ def main() -> None:
         sec_filings = download_sec_edgar_8k(sym, start_dt, end_dt)
         combined_news.extend(sec_filings)
 
-        # 3. Descargar Yahoo Finance RSS
-        yahoo_rss = download_yahoo_rss_news(sym)
-        combined_news.extend(yahoo_rss)
+        # 3. Descargar Yahoo Finance RSS si el rango incluye fechas recientes
+        if end_dt.date() >= datetime.now(EASTERN_TZ).date() - timedelta(days=7):
+            yahoo_rss = download_yahoo_rss_news(sym)
+            combined_news.extend(yahoo_rss)
 
         # 4. Descargar Alpaca News si hay credenciales
         if api_key and secret_key:

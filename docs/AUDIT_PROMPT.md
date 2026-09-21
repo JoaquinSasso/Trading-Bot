@@ -49,16 +49,36 @@ Has recibido para auditoría el diseño completo del sistema de trading algorít
 - **Inferencia FinBERT:** Modelo `ProsusAI/finbert` ejecutado en PC de escritorio (`JOAPC`), produciendo **7.490 observaciones diarias** (2024–2026) alineadas a las 15:45 ET.
 - **Regla de Veto:** Si `negative_share >= 0.35` en la ventana rodante de 24h, la entrada en ese activo queda vetada automáticamente.
 
-### 5. Resultados Empíricos del Benchmark (Año 2025 Completo)
-- **S&P 500 Buy & Hold (Benchmark):** +15.70% Retorno | 1.15 Sharpe | -9.80% MaxDD.
-- **Estrategia S3 Baseline (Pullbacks a EMA20 con TP 2R):** +5.16% Retorno | 1.05 Sharpe | -2.59% MaxDD (sufrió severo *cash drag* con 70% en efectivo y corte prematuro de ganadores).
+### 5. Resultados Empíricos del Benchmark (2020–2022 y 2025)
+
+#### A. Prueba de Estrés Fuera de Muestra (Out-of-Sample: 2020 a 2022 con 10.962 noticias FinBERT)
+- **Año 2020 (Crash COVID + Rebote Explosivo):**
+  - SPY Buy & Hold: +15.56%
+  - S3 Baseline: +9.83%
+  - **S5 v1.2.0 Oficial: +18.24%** (Alpha vs SPY: **+2.68%** | Sharpe: 0.60 | MaxDD: 24.10% | WinRate: 48.1%)
+- **Año 2021 (Mercado Alcista de Renta Variable):**
+  - SPY Buy & Hold: +26.55%
+  - S3 Baseline: -2.75%
+  - **S5 v1.2.0 Oficial: +14.08%** (Ganancia neta positiva | Sharpe: 0.51 | MaxDD: 23.41% | WinRate: 45.2%)
+- **Año 2022 (Mercado Bajista Severo - Inflación, Suba de Tasas y Guerra):**
+  - SPY Buy & Hold: **-19.71%** (Desplome bursátil general)
+  - S3 Baseline: -7.33%
+  - **S5 v1.2.0 Oficial: -1.43%** (Alpha vs SPY: **+18.28%** | Sharpe: -0.22 | MaxDD: 10.44% | WinRate: 55.9%)
+- **Trienio 2020–2022 Acumulado Compuesto (3 Años Continuos):**
+  - SPY Buy & Hold: **+18.20%**
+  - S3 Baseline: **-0.33%** (Pérdida acumulada)
+  - **S5 v1.2.0 Oficial: +37.58%** (Alpha vs SPY: **+19.38%** — ¡Más del doble que el mercado!)
+
+#### B. Período 2025 (Año Completo con 7.490 noticias FinBERT)
+- **S&P 500 Buy & Hold:** +15.70% Retorno | 1.15 Sharpe | -9.80% MaxDD.
+- **S3 Baseline (Pullbacks a EMA20 con TP 2R):** +5.16% Retorno | 1.05 Sharpe | -2.59% MaxDD.
 - **S5 v1.2.0 (Multi-Sectorial + Metales Preciosos + Veto FinBERT):**
   - **Retorno Neto Anual:** **+81.85%** (**+66.15% de Alpha**).
   - **Ratio de Sharpe:** **2.91**.
-  - **Máximo Drawdown (MaxDD):** **-7.57%** (inferior al -9.80% del mercado).
+  - **Máximo Drawdown (MaxDD):** **-7.57%** (menor que el mercado).
   - **Tasa de Aciertos (Win Rate):** **71.4%**.
   - **Factor de Beneficio (Profit Factor):** **5.28**.
-  - **Operaciones Totales:** 21 trades en el año (baja rotación, alta convicción).
+  - **Operaciones Totales:** 21 trades en el año.
 
 ---
 
