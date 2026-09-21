@@ -154,10 +154,18 @@ def compute_s8_pid_for_asset(
         cur_bar_close = float(c_filtered.iloc[-1])
         e_cur_intra = (math.log(cur_bar_close) - float(log_ema.iloc[-1])) / sigma_45d
 
-        # 2 horas = 2 barras si resolución es 1h, o 24 barras si es 5m
-        step_is_1h = len(intraday_df) < 10000  # heurística de resolución
-        bars_2h = 2 if step_is_1h else 24
-        bars_1h = 1 if step_is_1h else 12
+        # Detección precisa de resolución intradiaria (5m vs 1h)
+        step_is_5m = False
+        if len(intraday_df) >= 2:
+            if "timestamp" in intraday_df.columns:
+                diff_sec = abs(float(intraday_df["timestamp"].iloc[-1]) - float(intraday_df["timestamp"].iloc[-2]))
+                step_is_5m = (diff_sec <= 600)
+            elif "_dt" in intraday_df.columns:
+                diff_sec = abs((intraday_df["_dt"].iloc[-1] - intraday_df["_dt"].iloc[-2]).total_seconds())
+                step_is_5m = (diff_sec <= 600)
+
+        bars_2h = 24 if step_is_5m else 2
+        bars_1h = 12 if step_is_5m else 1
 
         if len(intraday_df) > bars_2h:
             available_horizons.append("2h")
@@ -171,8 +179,8 @@ def compute_s8_pid_for_asset(
             e_prev = (math.log(p_prev) - float(log_ema.iloc[-1])) / sigma_45d
             diffs["1h"] = e_cur_intra - e_prev
 
-        # Horizontes de 30m, 15m, 5m (si están disponibles en intraday_df)
-        if not step_is_1h and len(intraday_df) > 6:
+        # Horizontes de 30m, 15m, 5m (disponibles en barras de 5m)
+        if step_is_5m and len(intraday_df) > 6:
             available_horizons.extend(["30m", "15m", "5m"])
             for h_code, n_bars in [("30m", 6), ("15m", 3), ("5m", 1)]:
                 p_prev = float(c_filtered.iloc[-1 - n_bars])
