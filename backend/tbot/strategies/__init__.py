@@ -12,6 +12,7 @@ from tbot.strategies.s2_mean_reversion_rsi2 import MeanReversionRSI2Strategy
 from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
 from tbot.strategies.s4_opening_range_breakout import OpeningRangeBreakoutStrategy
 from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
+from tbot.strategies.s6_intraday_5m_multi_horizon import Intraday5mMultiHorizonStrategy
 
 __all__ = [
     "Signal",
@@ -24,4 +25,5 @@ __all__ = [
     "TrendPullbackStrategy",
     "OpeningRangeBreakoutStrategy",
     "DualMomentumLeaderStrategy",
+    "Intraday5mMultiHorizonStrategy",
 ]
