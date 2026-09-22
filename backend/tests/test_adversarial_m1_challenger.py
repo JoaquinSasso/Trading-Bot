@@ -447,30 +447,30 @@ def test_adversarial_b09_arbitration_decision_matrix():
 
 
 def test_adversarial_b01_run_backtest_intraday_5m_simulation_session_reset():
-    """Adversarial test: run_alpaca_intraday_simulation across a massive overnight gap."""
-    import sys
-    from pathlib import Path
-    root = Path(__file__).resolve().parent.parent.parent
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-    from scripts.run_backtest_intraday_5m import INTRADAY_UNIVERSE, run_alpaca_intraday_simulation
+    """Adversarial test: Intraday simulation across a massive overnight gap using BacktestEngine."""
+    from decimal import Decimal
+    from tbot.backtest.engine import BacktestConfig, BacktestEngine
+    from tbot.strategies.s6_intraday_5m_multi_horizon import Intraday5mMultiHorizonStrategy
 
+    test_universe = ["SPY", "QQQ"]
     # Generate 2 sessions of 78 bars each
     dts_1 = pd.date_range("2026-03-02 09:30", periods=78, freq="5min")
     dts_2 = pd.date_range("2026-03-03 09:30", periods=78, freq="5min")
     all_dts = list(dts_1) + list(dts_2)
 
-    daily_data = {}
-    for sym_idx, sym in enumerate(INTRADAY_UNIVERSE):
+    intraday_data = {}
+    for sym_idx, sym in enumerate(test_universe):
         # Day 1 prices at 200.0 + jitter, Day 2 prices at 100.0 + jitter (-50% overnight gap)
         p1 = 200.0 + np.linspace(0, 2, 78)
         p2 = 100.0 + np.linspace(0, 1, 78) + (sym_idx * 0.5)
         prices = list(p1) + list(p2)
-        daily_data[sym] = pd.DataFrame({
+        intraday_data[sym] = pd.DataFrame({
             "datetime_et": [d.strftime("%Y-%m-%d %H:%M:%S") for d in all_dts],
             "date": [d.strftime("%Y-%m-%d") for d in all_dts],
             "time": [d.strftime("%H:%M:%S") for d in all_dts],
             "timestamp": [int(d.timestamp()) for d in all_dts],
+            "_parsed_ts": all_dts,
+            "_parsed_date": [d.date() for d in all_dts],
             "open": prices,
             "high": [p * 1.001 for p in prices],
             "low": [p * 0.999 for p in prices],
@@ -478,8 +478,19 @@ def test_adversarial_b01_run_backtest_intraday_5m_simulation_session_reset():
             "volume": [10000.0] * len(prices),
         })
 
-    res = run_alpaca_intraday_simulation(daily_data, config_name="test_adversarial_gap")
+    from tbot.backtest.guards import holdout_bypass_context
+
+    strat = Intraday5mMultiHorizonStrategy()
+    cfg = BacktestConfig(
+        strategy=strat,
+        universe=test_universe,
+        initial_capital=Decimal("2000.00"),
+        apply_retail_costs=True,
+    )
+    engine = BacktestEngine(config=cfg, historical_intraday=intraday_data)
+    with holdout_bypass_context():
+        res = engine.run(start_date=dts_1[0].date(), end_date=dts_2[-1].date(), resolution="5m")
     assert res is not None
-    assert math.isfinite(res.final_capital)
-    assert res.total_trades >= 0
+    assert math.isfinite(float(res.equity_curve.iloc[-1]))
+    assert res.metrics is not None
 

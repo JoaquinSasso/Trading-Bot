@@ -8,6 +8,9 @@
 
 Bot de trading algorítmico y cuantitativo para acciones y ETFs de EE. UU. a través de **Alpaca Markets** (Paper Trading y producción). Diseñado para superar de forma consistente el rendimiento del S&P 500 minimizando el Drawdown mediante **Momentum Transversal (S5 Dual Momentum Leader)**, **Filtro de Régimen Macro**, **Preservación en Efectivo Remunerado (~4.5% en T-Bills)** y **Veto Preventivo Cuantitativo con FinBERT**.
 
+> [!IMPORTANT]
+> **Estructura de Ramas del Repositorio:** Esta es la rama **`clean`** (optimizada para producción y desarrollo eficiente, libre de scripts y reportes obsoletos). Para acceder al archivo histórico completo de pruebas y experimentos previos a la poda, consultar la rama **`dirty`** (`git checkout dirty`). Para más detalles, consultar la guía de [Gobernanza de Ramas](docs/BRANCH_GOVERNANCE.md).
+
 ---
 
 ## 1. Rendimiento del Sistema vs S&P 500 (Año 2025)
