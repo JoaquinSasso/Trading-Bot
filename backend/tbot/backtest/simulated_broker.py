@@ -11,10 +11,18 @@ Modela la ejecución realista de órdenes según las reglas del plan maestro:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from tbot.strategies.interfaces import Signal
+
+
+@dataclass
+class UnsettledCredit:
+    """Crédito de efectivo no liquidado pendiente de settlement T+1/T+2."""
+
+    amount: Decimal
+    settlement_date: date
 
 
 @dataclass
@@ -54,6 +62,7 @@ class SimulatedTrade:
     slippage_cost: Decimal
     exit_reason: str
     initial_risk_usd: Decimal
+    account_type: str = "cash"
 
 
 class SimulatedBroker:
@@ -70,18 +79,79 @@ class SimulatedBroker:
         sec_fee_rate: Decimal = Decimal("0.0000278"),  # $27.80 por millón de USD nocional vendido
         finra_taf_per_share: Decimal = Decimal("0.000166"),  # $0.000166 por acción vendida
         max_finra_taf_per_order: Decimal = Decimal("8.30"),
+        account_type: str = "cash",
+        settlement_days: int = 1,
+        etf_half_spread_bps: float = 0.0,
+        stock_half_spread_bps: float = 0.0,
+        cat_fee_per_share: Decimal = Decimal("0.00003"),
+        integer_shares: bool = False,
     ) -> None:
         self.initial_capital = initial_capital
-        self.cash = initial_capital
+        self.account_type = account_type.lower()
+        self.settlement_days = settlement_days
+        self.settled_cash = initial_capital
+        self.unsettled_cash = Decimal("0.0")
+        self._unsettled_credits: list[UnsettledCredit] = []
+
         self.etf_slippage = Decimal(str(etf_slippage_bps / 10000.0))
         self.stock_slippage = Decimal(str(stock_slippage_bps / 10000.0))
+        self.etf_half_spread = Decimal(str(etf_half_spread_bps / 10000.0))
+        self.stock_half_spread = Decimal(str(stock_half_spread_bps / 10000.0))
         self.sec_fee_rate = sec_fee_rate
         self.finra_taf_per_share = finra_taf_per_share
         self.max_finra_taf = max_finra_taf_per_order
+        self.cat_fee_per_share = cat_fee_per_share
+        self.integer_shares = integer_shares
 
         self.positions: dict[str, SimulatedPosition] = {}
         self.closed_trades: list[SimulatedTrade] = []
         self.trade_counter = 0
+
+    @property
+    def cash(self) -> Decimal:
+        """Efectivo total (liquidado + no liquidado)."""
+        return self.settled_cash + self.unsettled_cash
+
+    @cash.setter
+    def cash(self, value: Decimal) -> None:
+        """Permite asignar efectivo manteniendo compatibilidad hacia atrás."""
+        diff = Decimal(str(value)) - (self.settled_cash + self.unsettled_cash)
+        self.settled_cash += diff
+
+    @property
+    def buying_power(self) -> Decimal:
+        """Poder de compra disponible según el tipo de cuenta.
+
+        En cuenta Cash: solo fondos liquidados (settled cash) para prevenir Good Faith Violations (GFV).
+        En cuenta Margin: efectivo total (settled + unsettled).
+        """
+        if self.account_type == "cash":
+            return max(Decimal("0.0"), self.settled_cash)
+        return max(Decimal("0.0"), self.cash)
+
+    def calculate_settlement_date(self, trade_date: date | datetime) -> date:
+        """Calcula la fecha de liquidación sumando días hábiles (omitiendo fines de semana)."""
+        d = trade_date.date() if isinstance(trade_date, datetime) else trade_date
+        added_days = 0
+        while added_days < self.settlement_days:
+            d += timedelta(days=1)
+            if d.weekday() < 5:  # 0=Lunes, 4=Viernes
+                added_days += 1
+        return d
+
+    def process_settlement(self, current_date: date | datetime) -> None:
+        """Libera créditos no liquidados cuya fecha de liquidación haya llegado."""
+        if not self._unsettled_credits:
+            return
+        cur_d = current_date.date() if isinstance(current_date, datetime) else current_date
+        remaining: list[UnsettledCredit] = []
+        for credit in self._unsettled_credits:
+            if cur_d >= credit.settlement_date:
+                self.settled_cash += credit.amount
+                self.unsettled_cash = max(Decimal("0.0"), self.unsettled_cash - credit.amount)
+            else:
+                remaining.append(credit)
+        self._unsettled_credits = remaining
 
     def _get_slippage_rate(self, symbol: str) -> Decimal:
         """Determina la tasa de slippage según si el símbolo es un ETF o una acción."""
@@ -89,12 +159,19 @@ class SimulatedBroker:
             return self.etf_slippage
         return self.stock_slippage
 
+    def _get_half_spread_rate(self, symbol: str) -> Decimal:
+        """Determina la tasa de medio spread según si el símbolo es un ETF o una acción."""
+        if symbol.upper() in self.ETF_SYMBOLS:
+            return self.etf_half_spread
+        return self.stock_half_spread
+
     def calculate_sell_regulatory_fees(self, qty: Decimal, exit_price: Decimal) -> Decimal:
-        """Calcula las tarifas regulatorias SEC fee y FINRA TAF en ventas."""
+        """Calcula las tarifas regulatorias SEC fee, FINRA TAF y CAT fee en ventas."""
         notional = qty * exit_price
         sec_fee = notional * self.sec_fee_rate
         finra_fee = min(qty * self.finra_taf_per_share, self.max_finra_taf)
-        return round(sec_fee + finra_fee, 4)
+        cat_fee = qty * self.cat_fee_per_share
+        return round(sec_fee + finra_fee + cat_fee, 4)
 
     def get_equity(self, current_prices: dict[str, Decimal]) -> Decimal:
         """Calcula el valor liquidativo total (efectivo + valor de mercado de posiciones)."""
@@ -111,24 +188,31 @@ class SimulatedBroker:
         next_bar_open: Decimal,
         timestamp: datetime,
     ) -> SimulatedPosition | None:
-        """Ejecuta una orden de compra en la apertura de la barra siguiente con slippage."""
-        if qty <= 0 or self.cash <= 0:
+        """Ejecuta una orden de compra en la apertura de la barra siguiente con slippage y medio spread."""
+        self.process_settlement(timestamp)
+        available_funds = self.buying_power
+
+        if self.integer_shares:
+            qty = Decimal(int(qty))
+
+        if qty <= 0 or available_funds <= 0:
             return None
 
         slippage_rate = self._get_slippage_rate(signal.symbol)
-        # Compra: Se paga ligeramente más debido al slippage
-        fill_price = round(next_bar_open * (Decimal("1.0") + slippage_rate), 4)
+        half_spread_rate = self._get_half_spread_rate(signal.symbol)
+        # Compra: Se paga ligeramente más debido al slippage y al medio spread
+        fill_price = round(next_bar_open * (Decimal("1.0") + slippage_rate + half_spread_rate), 4)
         notional = qty * fill_price
 
-        # Comprobar efectivo disponible (sin apalancamiento)
-        if notional > self.cash:
-            # Ajustar cantidad al efectivo disponible
-            qty = Decimal(int(self.cash / fill_price))
+        # Comprobar poder de compra disponible (previene GFV en cuentas Cash)
+        if notional > available_funds:
+            # Ajustar cantidad al poder de compra disponible
+            qty = Decimal(int(available_funds / fill_price))
             if qty <= 0:
                 return None
             notional = qty * fill_price
 
-        self.cash -= notional
+        self.settled_cash -= notional
 
         pos = SimulatedPosition(
             symbol=signal.symbol,
@@ -140,6 +224,11 @@ class SimulatedBroker:
             take_profit=signal.take_profit_price,
             strategy_id=signal.strategy_id,
             exit_at_close=signal.exit_at_close,
+            max_holding_bars=(
+                signal.max_holding
+                if isinstance(signal.max_holding, int)
+                else (int(signal.max_holding.total_seconds() // 3600) if isinstance(signal.max_holding, timedelta) else 0)
+            ),
         )
         self.positions[signal.symbol] = pos
         return pos
@@ -152,20 +241,29 @@ class SimulatedBroker:
         reason: str,
         is_gap: bool = False,
     ) -> SimulatedTrade | None:
-        """Cierra una posición abierta, deduciendo slippage y tarifas regulatorias."""
+        """Cierra una posición abierta, deduciendo slippage, medio spread y tarifas regulatorias."""
+        self.process_settlement(timestamp)
         pos = self.positions.pop(symbol, None)
         if pos is None:
             return None
 
         slippage_rate = self._get_slippage_rate(symbol)
-        # Venta: Se recibe ligeramente menos debido al slippage
-        fill_price = round(exit_price_raw * (Decimal("1.0") - slippage_rate), 4)
+        half_spread_rate = self._get_half_spread_rate(symbol)
+        # Venta: Se recibe ligeramente menos debido al slippage y medio spread
+        fill_price = round(exit_price_raw * (Decimal("1.0") - slippage_rate - half_spread_rate), 4)
 
         notional_gross = pos.qty * fill_price
         fees = self.calculate_sell_regulatory_fees(pos.qty, fill_price)
         net_proceeds = notional_gross - fees
 
-        self.cash += net_proceeds
+        if self.account_type == "cash":
+            self.unsettled_cash += net_proceeds
+            settle_date = self.calculate_settlement_date(timestamp)
+            self._unsettled_credits.append(
+                UnsettledCredit(amount=net_proceeds, settlement_date=settle_date)
+            )
+        else:
+            self.settled_cash += net_proceeds
 
         cost_basis = pos.qty * pos.entry_price
         pnl = net_proceeds - cost_basis
@@ -199,6 +297,7 @@ class SimulatedBroker:
             slippage_cost=round(slippage_cost, 4),
             exit_reason=reason,
             initial_risk_usd=round(initial_risk_total, 4),
+            account_type=self.account_type,
         )
         self.closed_trades.append(trade)
         return trade
@@ -214,6 +313,7 @@ class SimulatedBroker:
         is_market_close: bool = False,
     ) -> SimulatedTrade | None:
         """Evalúa si la barra activa el Stop Loss, Take Profit o salida forzada de cierre."""
+        self.process_settlement(timestamp)
         pos = self.positions.get(symbol)
         if pos is None:
             return None

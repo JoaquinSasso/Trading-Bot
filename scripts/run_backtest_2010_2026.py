@@ -10,16 +10,18 @@ Evalúa la estrategia S5 Dual Momentum Leader a lo largo de 16 años completos (
 
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy import stats
+from tbot.backtest.engine import BacktestConfig, BacktestEngine
+from tbot.backtest.guards import DEV_DAILY_END, DEV_DAILY_START
+from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "historical_2010_2026"
@@ -77,7 +79,7 @@ def load_and_preprocess_market_data() -> tuple[dict[str, dict[date, dict[str, fl
 
         data_lookup[sym] = sym_dict
         if sym == "SPY":
-            date_sets = sorted(list(sym_dict.keys()))
+            date_sets = sorted(sym_dict.keys())
 
     return data_lookup, date_sets, rf_daily_map
 
@@ -112,196 +114,66 @@ def run_simulation(
     apply_costs: bool = True,
     integer_shares: bool = True,
 ) -> MulticycleResult:
+    """Ejecuta la simulación histórica multiciclo invocando BacktestEngine sobre la ventana de desarrollo."""
+    tradable = [s for s in ALL_SYMBOLS if s != "SPY"]
+    strat = DualMomentumLeaderStrategy(
+        top_n_leaders=top_n,
+        universe=tradable,
+        trailing_ema_period=25,
+        stop_buffer_pct=0.035,
+        max_holding_days=30,
+    )
+    cfg = BacktestConfig(
+        strategy=strat,
+        universe=tradable,
+        initial_capital=Decimal("2000.00"),
+        max_open_positions=top_n,
+        single_position_cap=max_weight,
+        trailing_ema_period=25,
+        stop_buffer_pct=0.035,
+        max_holding_sessions=30,
+        enable_circuit_breakers=enable_cb,
+        apply_retail_costs=apply_costs,
+        integer_shares=integer_shares,
+        enable_cash_yield=True,
+    )
+    daily_dfs = {}
+    for s, s_dict in data_lookup.items():
+        rows = [
+            {"date": d, "open": v["open"], "high": v["high"], "low": v["low"], "close": v["close"]}
+            for d, v in s_dict.items()
+        ]
+        daily_dfs[s] = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+
+    engine = BacktestEngine(config=cfg, historical_daily=daily_dfs)
+    start_d = max(all_dates[0], DEV_DAILY_START)
+    end_d = min(all_dates[-1], DEV_DAILY_END)
+    res = engine.run(start_date=start_d, end_date=end_d, resolution="daily")
+
+    eq_series = res.equity_curve
     initial_capital = 2000.0
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
-    equity_history: dict[date, float] = {}
-    cb_events: list[dict] = []
-    portfolio_daily_returns: list[float] = []
+    final_cap = float(eq_series.iloc[-1]) if not eq_series.empty else initial_capital
+    tot_ret = ((final_cap - initial_capital) / initial_capital) * 100.0
+    n_years = len(eq_series) / 252.0 if len(eq_series) > 0 else 1.0
+    cagr = ((final_cap / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
 
-    closed_pnl: list[float] = []
-    total_friction_usd = 0.0
-
-    tradable_symbols = [s for s in ALL_SYMBOLS if s != "SPY"]
-
-    for cur_date in all_dates:
-        daily_rf = rf_daily_map.get(cur_date, 0.0)
-
-        # 1. Equity de apertura
-        opening_invested = sum(
-            p["shares"] * data_lookup[s][cur_date]["open"]
-            for s, p in open_positions.items()
-            if cur_date in data_lookup[s]
-        )
-        daily_starting_equity = cash + opening_invested
-
-        # 2. Umbrales de cortacircuitos
-        if cb_mode == "adaptive" and len(portfolio_daily_returns) >= 20:
-            sigma_20 = float(np.std(portfolio_daily_returns[-20:]))
-            pause_thresh = max(2.0, 3.0 * sigma_20 * 100.0)
-            emergency_thresh = max(3.5, 4.0 * sigma_20 * 100.0)
-        else:
-            pause_thresh = 2.0
-            emergency_thresh = 3.5
-
-        # 3. Evaluación intradiaria de cortacircuitos
-        can_open_new = True
-        emergency_triggered = False
-
-        if enable_cb and open_positions:
-            worst_intraday_invested = sum(
-                p["shares"] * data_lookup[s][cur_date]["low"]
-                for s, p in open_positions.items()
-                if cur_date in data_lookup[s]
-            )
-            worst_intraday_equity = cash + worst_intraday_invested
-            intraday_loss_pct = ((daily_starting_equity - worst_intraday_equity) / daily_starting_equity) * 100.0 if daily_starting_equity > 0 else 0.0
-
-            if intraday_loss_pct >= emergency_thresh:
-                emergency_triggered = True
-                can_open_new = False
-                cash_recovered = 0.0
-                for sym in list(open_positions.keys()):
-                    pos = open_positions[sym]
-                    raw_p = data_lookup[sym][cur_date]["low"]
-                    h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-                    ex_p = raw_p * (1.0 - h_spd - slip)
-                    fric = raw_p * (h_spd + slip) * pos["shares"]
-                    total_friction_usd += fric
-                    pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-                    closed_pnl.append(pnl)
-                    cash_recovered += ex_p * pos["shares"]
-                    del open_positions[sym]
-
-                cash += cash_recovered
-                cb_events.append({"date": cur_date, "type": "EMERGENCY_FLATTEN", "loss_pct": intraday_loss_pct})
-
-            elif intraday_loss_pct >= pause_thresh:
-                can_open_new = False
-                cb_events.append({"date": cur_date, "type": "PAUSE_DAILY_LOSS", "loss_pct": intraday_loss_pct})
-
-        if emergency_triggered:
-            if daily_rf > 0:
-                cash *= (1.0 + daily_rf)
-            equity_history[cur_date] = cash
-            if len(equity_history) >= 2:
-                prev = list(equity_history.values())[-2]
-                portfolio_daily_returns.append((cash - prev) / prev)
-            continue
-
-        # 4. Régimen Macro (SPY sobre EMA50)
-        spy_bar = data_lookup["SPY"][cur_date]
-        is_bull = spy_bar["close"] >= spy_bar["ema50"]
-
-        # 5. Salidas de posiciones abiertas
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["days_held"] += 1
-            bar = data_lookup[sym][cur_date]
-            c = bar["close"]
-            ema25 = bar["ema25"]
-
-            hit_stop = (pos["days_held"] >= 3 and c < ema25)
-            hit_max_hold = (pos["days_held"] >= 30)
-            bear_exit = (not is_bull)
-
-            if hit_stop or hit_max_hold or bear_exit:
-                h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-                ex_p = c * (1.0 - h_spd - slip)
-                fric = c * (h_spd + slip) * pos["shares"]
-                total_friction_usd += fric
-                pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-                closed_pnl.append(pnl)
-                cash += ex_p * pos["shares"]
-                del open_positions[sym]
-
-        # 6. Entradas si régimen alcista y no pausado
-        if is_bull and can_open_new:
-            available_slots = top_n - len(open_positions)
-            if available_slots > 0:
-                candidates = []
-                for sym in tradable_symbols:
-                    if sym in open_positions:
-                        continue
-                    if cur_date not in data_lookup[sym]:
-                        continue
-                    b = data_lookup[sym][cur_date]
-                    if b["mom45"] <= 0:
-                        continue
-                    if b["close"] < b["ema25"]:
-                        continue
-                    candidates.append((sym, b["mom45"], b["close"]))
-
-                candidates.sort(key=lambda x: x[1], reverse=True)
-
-                total_eq = cash + sum(
-                    p["shares"] * data_lookup[s][cur_date]["close"]
-                    for s, p in open_positions.items()
-                )
-                target_alloc = min(total_eq * max_weight, total_eq / top_n)
-
-                for sym, mom_val, raw_p in candidates[:available_slots]:
-                    alloc = min(cash, target_alloc)
-                    if alloc < 25.0:
-                        break
-
-                    h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-                    entry_p = raw_p * (1.0 + h_spd + slip)
-
-                    shares = math.floor(alloc / entry_p) if integer_shares else (alloc / entry_p)
-                    if shares <= 0:
-                        continue
-
-                    fric = raw_p * (h_spd + slip) * shares
-                    total_friction_usd += fric
-                    cash -= shares * entry_p
-                    open_positions[sym] = {
-                        "entry_date": cur_date,
-                        "entry_price": entry_p,
-                        "shares": shares,
-                        "days_held": 0,
-                    }
-
-        # 7. Efectivo gana tasa libre de riesgo de BIL
-        if daily_rf > 0 and cash > 0:
-            cash *= (1.0 + daily_rf)
-
-        # 8. Equity al cierre
-        invested = sum(
-            p["shares"] * data_lookup[s][cur_date]["close"]
-            for s, p in open_positions.items()
-        )
-        current_eq = cash + invested
-        equity_history[cur_date] = current_eq
-
-        if len(equity_history) >= 2:
-            prev = list(equity_history.values())[-2]
-            portfolio_daily_returns.append((current_eq - prev) / prev)
-
-    # Métricas
-    eq_series = pd.Series(equity_history)
-    tot_ret = ((eq_series.iloc[-1] - initial_capital) / initial_capital) * 100.0
-
-    n_years = len(eq_series) / 252.0
-    cagr = ((eq_series.iloc[-1] / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
-
-    # Drawdown
     cummax = eq_series.cummax()
     dd_series = (eq_series - cummax) / cummax
     max_dd = float(abs(dd_series.min()) * 100.0)
 
-    # Sharpe y Sortino
     daily_rets = eq_series.pct_change().dropna()
-    excess_rets = pd.Series([daily_rets[d] - rf_daily_map.get(d, 0.0) for d in daily_rets.index], index=daily_rets.index)
-    std_excess = float(excess_rets.std())
+    excess_rets = pd.Series(
+        [daily_rets[d] - rf_daily_map.get(d.date() if hasattr(d, "date") else d, 0.0) for d in daily_rets.index],
+        index=daily_rets.index,
+    )
+    std_excess = float(excess_rets.std()) if len(excess_rets) > 0 else 0.0
     sharpe = float((excess_rets.mean() / std_excess) * np.sqrt(252.0)) if std_excess > 0 else 0.0
 
     downside_excess = excess_rets[excess_rets < 0]
-    downside_std = float(downside_excess.std())
+    downside_std = float(downside_excess.std()) if len(downside_excess) > 0 else 0.0
     sortino = float((excess_rets.mean() / downside_std) * np.sqrt(252.0)) if downside_std > 0 else 0.0
     calmar = (cagr / max_dd) if max_dd > 0 else 0.0
 
-    # Retornos por año calendario
     df_y = pd.DataFrame({"eq": eq_series})
     df_y["year"] = pd.to_datetime(df_y.index).year
     annual_rets = {}
@@ -310,10 +182,16 @@ def run_simulation(
         y_en = grp["eq"].iloc[-1]
         annual_rets[int(y)] = float(((y_en - y_st) / y_st) * 100.0)
 
-    win_pnl = [p for p in closed_pnl if p > 0]
-    loss_pnl = [p for p in closed_pnl if p <= 0]
-    win_rate = (len(win_pnl) / len(closed_pnl)) * 100.0 if closed_pnl else 0.0
-    pf = (sum(win_pnl) / abs(sum(loss_pnl))) if loss_pnl and sum(loss_pnl) != 0 else 999.0
+    tot_costs = sum(float(t.fees + t.slippage_cost) for t in res.trades)
+
+    cb_dicts = [
+        {
+            "date": getattr(ev, "date", getattr(ev, "timestamp", None)),
+            "type": getattr(ev, "event_type", getattr(ev, "action", "")),
+            "loss_pct": float(getattr(ev, "intraday_loss_pct", getattr(ev, "loss_pct", 0.0))),
+        }
+        for ev in res.circuit_breaker_events
+    ]
 
     return MulticycleResult(
         config_name=config_name,
@@ -324,12 +202,12 @@ def run_simulation(
         sharpe_ratio=sharpe,
         sortino_ratio=sortino,
         calmar_ratio=calmar,
-        total_trades=len(closed_pnl),
-        win_rate_pct=win_rate,
-        profit_factor=pf,
+        total_trades=len(res.trades),
+        win_rate_pct=float(res.metrics.win_rate_pct),
+        profit_factor=float(res.metrics.profit_factor),
         annual_returns=annual_rets,
-        cb_events=cb_events,
-        total_costs_usd=total_friction_usd,
+        cb_events=cb_dicts,
+        total_costs_usd=tot_costs,
     )
 
 
@@ -339,7 +217,8 @@ def compute_benchmark_spy(
     rf_daily_map: dict[date, float],
 ) -> MulticycleResult:
     """Calcula la serie oficial Buy & Hold de SPY con reinversión teórica."""
-    spy_closes = pd.Series({d: data_lookup["SPY"][d]["close"] for d in all_dates})
+    dev_dates = [d for d in all_dates if DEV_DAILY_START <= d <= DEV_DAILY_END]
+    spy_closes = pd.Series({d: data_lookup["SPY"][d]["close"] for d in dev_dates})
     initial = spy_closes.iloc[0]
     eq_series = (spy_closes / initial) * 2000.0
 
@@ -351,7 +230,10 @@ def compute_benchmark_spy(
     max_dd = float(abs(((eq_series - cummax) / cummax).min()) * 100.0)
 
     daily_rets = eq_series.pct_change().dropna()
-    excess_rets = pd.Series([daily_rets[d] - rf_daily_map.get(d, 0.0) for d in daily_rets.index], index=daily_rets.index)
+    excess_rets = pd.Series(
+        [daily_rets[d] - rf_daily_map.get(d, 0.0) for d in daily_rets.index],
+        index=daily_rets.index,
+    )
     std_excess = float(excess_rets.std())
     sharpe = float((excess_rets.mean() / std_excess) * np.sqrt(252.0)) if std_excess > 0 else 0.0
 

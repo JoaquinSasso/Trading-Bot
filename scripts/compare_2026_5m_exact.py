@@ -25,9 +25,19 @@ if str(PROJECT_ROOT) not in sys.path:
 BACKEND_DIR = PROJECT_ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from tbot.strategies.s7_pid_scorer import score_universe_pid
-from tbot.strategies.s8_pid_multihorizon import score_universe_s8
+from decimal import Decimal
+
+from tbot.backtest.engine import BacktestConfig, BacktestEngine
+from tbot.backtest.guards import SAMPLE_5M_END, SAMPLE_5M_START
+from tbot.backtest.metrics import AlphaRegressionResult, compute_ols_alpha_beta
+from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
+from tbot.strategies.s7_pid_scorer import S7PIDScorerStrategy
+from tbot.strategies.s8_pid_multihorizon import (
+    S8PIDMultihorizonStrategy,
+)
 
 DATA_5M_DIR = PROJECT_ROOT / "data" / "intraday_5m"
 DATA_DAILY_DIR = PROJECT_ROOT / "data" / "daily_2026"
@@ -47,32 +57,46 @@ def calculate_alpaca_fees(sale_notional: float, shares: float) -> float:
     return sec + taf + cat
 
 
-def compute_metrics(eq_s: pd.Series, initial_cap: float = 2000.0) -> tuple[float, float, float, float, pd.Series]:
+def compute_metrics(
+    eq_s: pd.Series, initial_cap: float = 2000.0
+) -> tuple[float, float | None, float | None, float, pd.Series, float]:
     tot_ret = (float(eq_s.iloc[-1]) - initial_cap) / initial_cap * 100.0
     daily = eq_s.groupby(lambda x: str(x)[:10]).last()
     rets = daily.pct_change().dropna()
     n_days = len(daily)
-    n_years = n_days / 252.0 if n_days > 0 else 1.0
-    cagr = ((float(eq_s.iloc[-1]) / initial_cap) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
-    sharpe = float((rets.mean() / rets.std()) * np.sqrt(252.0)) if rets.std() > 0 else 0.0
+
+    # B-08: Anualización estrictamente prohibida para T < 252 sesiones
+    if n_days >= 252:
+        n_years = n_days / 252.0
+        cagr = ((float(eq_s.iloc[-1]) / initial_cap) ** (1.0 / n_years) - 1.0) * 100.0
+        sharpe = float((rets.mean() / rets.std()) * np.sqrt(252.0)) if rets.std() > 0 else 0.0
+    else:
+        cagr = None
+        sharpe = None
+
+    # Error estándar de Sharpe: SE(S) = sqrt((1 + S^2/2)/T)
+    if len(rets) > 1 and rets.std() > 0:
+        s_periodic = float(rets.mean() / rets.std())
+        sharpe_se = math.sqrt((1.0 + 0.5 * (s_periodic**2)) / n_days)
+    else:
+        sharpe_se = 0.0
+
     cum = (1.0 + rets).cumprod()
     max_dd = float(abs(((cum - cum.cummax()) / cum.cummax()).min()) * 100.0)
-    return tot_ret, cagr, sharpe, max_dd, rets
+    return tot_ret, cagr, sharpe, max_dd, rets, sharpe_se
 
 
-def compute_alpha_beta(strat_rets: pd.Series, spy_rets: pd.Series, strat_cagr: float, spy_cagr: float) -> tuple[float, float]:
-    common = strat_rets.index.intersection(spy_rets.index)
-    s = strat_rets.loc[common]
-    b = spy_rets.loc[common]
-    cov = np.cov(s, b)[0][1]
-    var_b = np.var(b)
-    beta = float(cov / var_b) if var_b > 0 else 1.0
-    # Alpha anualizado respecto al benchmark
-    alpha = strat_cagr - (beta * spy_cagr)
-    return alpha, beta
+def compute_alpha_beta(
+    strat_rets: pd.Series,
+    spy_rets: pd.Series,
+    strat_cagr: float | None = None,
+    spy_cagr: float | None = None,
+) -> AlphaRegressionResult:
+    """Calcula Alpha de Jensen y Beta mediante OLS statsmodels sobre retornos excedentes (B-07)."""
+    return compute_ols_alpha_beta(strat_rets, spy_rets)
 
 
-def get_2026_spy_metrics() -> tuple[float, float, float, float, pd.Series]:
+def get_2026_spy_metrics() -> tuple[float, float | None, float | None, float, pd.Series, float]:
     df_spy = pd.read_csv(DATA_5M_DIR / "SPY_5m.csv")
     p0 = float(df_spy.iloc[0]["open"])
     p1 = float(df_spy.iloc[-1]["close"])
@@ -81,16 +105,38 @@ def get_2026_spy_metrics() -> tuple[float, float, float, float, pd.Series]:
     daily = df_spy.groupby("date")["close"].last()
     rets = daily.pct_change().dropna()
     n_days = len(daily)
-    n_years = n_days / 252.0
-    cagr = ((p1 / p0) ** (1.0 / n_years) - 1.0) * 100.0
-    sharpe = float((rets.mean() / rets.std()) * np.sqrt(252.0))
+
+    if n_days >= 252:
+        n_years = n_days / 252.0
+        cagr = ((p1 / p0) ** (1.0 / n_years) - 1.0) * 100.0
+        sharpe = float((rets.mean() / rets.std()) * np.sqrt(252.0)) if rets.std() > 0 else 0.0
+    else:
+        cagr = None
+        sharpe = None
+
+    if len(rets) > 1 and rets.std() > 0:
+        s_periodic = float(rets.mean() / rets.std())
+        sharpe_se = math.sqrt((1.0 + 0.5 * (s_periodic**2)) / n_days)
+    else:
+        sharpe_se = 0.0
+
     cum = (1.0 + rets).cumprod()
     max_dd = float(abs(((cum - cum.cummax()) / cum.cummax()).min()) * 100.0)
-    return tot_ret, cagr, sharpe, max_dd, rets
+    return tot_ret, cagr, sharpe, max_dd, rets, sharpe_se
 
 
-def run_2026_s6_intraday() -> tuple[float, float, float, float, pd.Series]:
-    from scripts.run_backtest_intraday_5m import load_intraday_data, run_alpaca_intraday_simulation
+def run_2026_s6_intraday() -> tuple[float, float | None, float | None, float, pd.Series, float]:
+    try:
+        from run_backtest_intraday_5m import (
+            load_intraday_data,
+            run_alpaca_intraday_simulation,
+        )
+    except ImportError:
+        from scripts.run_backtest_intraday_5m import (
+            load_intraday_data,
+            run_alpaca_intraday_simulation,
+        )
+
     data = load_intraday_data()
     res = run_alpaca_intraday_simulation(
         daily_data=data,
@@ -101,336 +147,164 @@ def run_2026_s6_intraday() -> tuple[float, float, float, float, pd.Series]:
         initial_stop_pct=0.012,
         max_holding_bars=36,
     )
-    return res.total_return_pct, res.cagr_pct, res.sharpe_ratio, res.max_drawdown_pct, res.daily_returns
+    daily_rets = res.daily_returns
+    n_days = len(daily_rets)
+    cagr = res.cagr_pct if n_days >= 252 else None
+    sharpe = res.sharpe_ratio if n_days >= 252 else None
+    if len(daily_rets) > 1 and daily_rets.std() > 0:
+        s_periodic = float(daily_rets.mean() / daily_rets.std())
+        sharpe_se = math.sqrt((1.0 + 0.5 * (s_periodic**2)) / max(1, n_days))
+    else:
+        sharpe_se = 0.0
+
+    return res.total_return_pct, cagr, sharpe, res.max_drawdown_pct, daily_rets, sharpe_se
 
 
-def run_2026_s5_swing() -> tuple[float, float, float, float, pd.Series]:
-    # Swing S5 sobre datos diarios de 2026
+def load_daily_2026_data() -> dict[str, pd.DataFrame]:
     daily_data = {}
     for s in UNIVERSE_12:
         p = DATA_DAILY_DIR / f"{s}_daily.csv"
         df = pd.read_csv(p)
         df["date"] = pd.to_datetime(df["date"])
         daily_data[s] = df.sort_values("date").reset_index(drop=True)
-
-    df_spy = daily_data["SPY"]
-    dates_2026 = df_spy[(df_spy["date"] >= "2026-06-26") & (df_spy["date"] <= "2026-09-21")]["date"].tolist()
-
-    cash = 2000.0
-    initial_cap = 2000.0
-    open_pos = {}
-    equity_hist = {}
-
-    for d in dates_2026:
-        d_str = d.strftime("%Y-%m-%d")
-        sub_history = {s: daily_data[s][daily_data[s]["date"] <= d] for s in UNIVERSE_12}
-
-        spy_sub = sub_history["SPY"]
-        spy_c = float(spy_sub.iloc[-1]["close"])
-        spy_e50 = float(spy_sub["close"].ewm(span=50, adjust=False).mean().iloc[-1])
-        market_bull = (spy_c >= spy_e50)
-
-        # Salidas
-        for s in list(open_pos.keys()):
-            pos = open_pos[s]
-            pos["days"] += 1
-            cur_bar = sub_history[s].iloc[-1]
-            c_now = float(cur_bar["close"])
-            l_now = float(cur_bar["low"]) if "low" in cur_bar else c_now
-            s_ema25 = float(sub_history[s]["close"].ewm(span=25, adjust=False).mean().iloc[-1])
-
-            hit_stop = (l_now <= pos["stop"])
-            hit_trail = (c_now < s_ema25)
-            hit_max = (pos["days"] >= 30)
-            regime_exit = not market_bull
-
-            if hit_stop or hit_trail or hit_max or regime_exit:
-                exit_p = (pos["stop"] if hit_stop else c_now) * (1.0 - 0.0003)
-                gross = exit_p * pos["shares"]
-                fees = calculate_alpaca_fees(gross, pos["shares"])
-                cash += (gross - fees)
-                del open_pos[s]
-            else:
-                pos["stop"] = max(pos["stop"], s_ema25 * 0.98)
-
-        # Entradas
-        if market_bull and len(open_pos) < 4:
-            cands = []
-            for s in UNIVERSE_12:
-                if s in open_pos or s == "SPY":
-                    continue
-                sub = sub_history[s]
-                if len(sub) < 50:
-                    continue
-                c_now = float(sub.iloc[-1]["close"])
-                c_45 = float(sub.iloc[-46]["close"]) if len(sub) > 46 else float(sub.iloc[0]["close"])
-                m45 = (c_now - c_45) / c_45
-                e50 = float(sub["close"].ewm(span=50, adjust=False).mean().iloc[-1])
-
-                if c_now > e50 and m45 > 0:
-                    cands.append((s, m45, c_now))
-
-            if cands:
-                cands.sort(key=lambda x: x[1], reverse=True)
-                tot_eq = cash + sum(p["shares"] * float(sub_history[sym].iloc[-1]["close"]) for sym, p in open_pos.items())
-                slots = 4 - len(open_pos)
-                for s, m45, c_now in cands[:slots]:
-                    alloc = min(cash, tot_eq * 0.25)
-                    if alloc < 20:
-                        break
-                    entry_p = c_now * (1.0 + 0.0003)
-                    shares = round(alloc / entry_p, 4)
-                    if shares <= 0:
-                        continue
-                    cost = shares * entry_p
-                    cash -= cost
-                    open_pos[s] = {
-                        "shares": shares,
-                        "entry_p": entry_p,
-                        "cost": cost,
-                        "stop": entry_p * (1.0 - 0.035),
-                        "days": 0,
-                    }
-
-        curr_inv = sum(p["shares"] * float(sub_history[s].iloc[-1]["close"]) for s, p in open_pos.items())
-        equity_hist[d_str] = cash + curr_inv
-
-    eq_s = pd.Series(equity_hist)
-    ret, cagr, sharpe, max_dd, rets = compute_metrics(eq_s, initial_cap)
-    return ret, cagr, sharpe, max_dd, rets
+    return daily_data
 
 
-def run_2026_s7_simulation(sign_p: float = 1.0) -> tuple[float, float, float, float, pd.Series]:
-    daily_data = {}
-    for s in UNIVERSE_12:
-        p = DATA_DAILY_DIR / f"{s}_daily.csv"
-        df = pd.read_csv(p)
-        df["date"] = pd.to_datetime(df["date"])
-        daily_data[s] = df.sort_values("date").reset_index(drop=True)
-
-    df_spy = daily_data["SPY"]
-    dates_2026 = df_spy[(df_spy["date"] >= "2026-06-26") & (df_spy["date"] <= "2026-09-21")]["date"].tolist()
-
-    cash = 2000.0
-    initial_cap = 2000.0
-    open_pos = {}
-    equity_hist = {}
-
-    for d in dates_2026:
-        d_str = d.strftime("%Y-%m-%d")
-        sub_history = {s: daily_data[s][daily_data[s]["date"] <= d] for s in UNIVERSE_12 if s in daily_data}
-        sub_spy = daily_data["SPY"][daily_data["SPY"]["date"] <= d]
-
-        scores_dict = score_universe_pid(sub_history, df_spy=sub_spy, sign_p=sign_p)
-
-        # Salidas
-        for s in list(open_pos.keys()):
-            pos = open_pos[s]
-            pos["days"] += 1
-            cur_bar = sub_history[s].iloc[-1]
-            c_now = float(cur_bar["close"])
-            l_now = float(cur_bar["low"]) if "low" in cur_bar else c_now
-            s_ema25 = float(sub_history[s]["close"].ewm(span=25, adjust=False).mean().iloc[-1])
-
-            res_pid = scores_dict.get(s)
-            d_stress = res_pid.d_stress if res_pid else 0.0
-
-            hit_stop = (l_now <= pos["stop"])
-            hit_trail = (c_now < s_ema25)
-            hit_max = (pos["days"] >= 30)
-            forced_exit_stress = (d_stress > 2.0)
-
-            if hit_stop or hit_trail or hit_max or forced_exit_stress:
-                exit_p = (pos["stop"] if hit_stop else c_now) * (1.0 - 0.0003)
-                gross = exit_p * pos["shares"]
-                fees = calculate_alpaca_fees(gross, pos["shares"])
-                cash += (gross - fees)
-                del open_pos[s]
-            else:
-                pos["stop"] = max(pos["stop"], s_ema25 * 0.98)
-
-        # Entradas
-        if len(open_pos) < 4:
-            eligible_cands = []
-            for s, res in scores_dict.items():
-                if s in open_pos or s == "SPY":
-                    continue
-                if res.is_eligible:
-                    c_now = float(sub_history[s].iloc[-1]["close"])
-                    eligible_cands.append((s, res.u_score, res.d_stress, c_now))
-
-            if eligible_cands:
-                eligible_cands.sort(key=lambda x: x[1], reverse=True)
-                tot_eq = cash + sum(p["shares"] * float(sub_history[sym].iloc[-1]["close"]) for sym, p in open_pos.items())
-                slots = 4 - len(open_pos)
-                for s, u_score, d_stress, c_now in eligible_cands[:slots]:
-                    attenuation = max(0.5, 1.0 - 0.5 * max(0.0, d_stress))
-                    alloc = min(cash, tot_eq * 0.25 * attenuation)
-                    if alloc < 20.0:
-                        break
-                    entry_p = c_now * (1.0 + 0.0003)
-                    shares = round(alloc / entry_p, 4)
-                    if shares <= 0:
-                        continue
-                    cost = shares * entry_p
-                    cash -= cost
-                    open_pos[s] = {
-                        "shares": shares,
-                        "entry_p": entry_p,
-                        "cost": cost,
-                        "stop": entry_p * (1.0 - 0.035),
-                        "days": 0,
-                    }
-
-        curr_inv = sum(p["shares"] * float(sub_history[s].iloc[-1]["close"]) for s, p in open_pos.items())
-        equity_hist[d_str] = cash + curr_inv
-
-    eq_s = pd.Series(equity_hist)
-    ret, cagr, sharpe, max_dd, rets = compute_metrics(eq_s, initial_cap)
-    return ret, cagr, sharpe, max_dd, rets
-
-
-def run_2026_s8_simulation(weight_rule: str = "A", sign_p: float = 1.0) -> tuple[float, float, float, float, pd.Series]:
-    # S8 cargando barras de 5m reales para horizontes intradiarios completos
-    daily_data = {}
-    for s in UNIVERSE_12:
-        p = DATA_DAILY_DIR / f"{s}_daily.csv"
-        df = pd.read_csv(p)
-        df["date"] = pd.to_datetime(df["date"])
-        daily_data[s] = df.sort_values("date").reset_index(drop=True)
-
-    intraday_5m_data = {}
+def load_5m_2026_data() -> dict[str, pd.DataFrame]:
+    intraday_5m = {}
     for s in UNIVERSE_12:
         p = DATA_5M_DIR / f"{s}_5m.csv"
-        df_i = pd.read_csv(p)
-        df_i["_dt"] = pd.to_datetime(df_i["datetime_et"])
-        intraday_5m_data[s] = df_i.sort_values("_dt").reset_index(drop=True)
+        df = pd.read_csv(p)
+        df["timestamp"] = pd.to_datetime(df["datetime_et"])
+        intraday_5m[s] = df.sort_values("timestamp").reset_index(drop=True)
+    return intraday_5m
 
-    df_spy_d = daily_data["SPY"]
-    dates_2026 = df_spy_d[(df_spy_d["date"] >= "2026-06-26") & (df_spy_d["date"] <= "2026-09-21")]["date"].tolist()
 
-    cash = 2000.0
-    initial_cap = 2000.0
-    open_pos = {}
-    equity_hist = {}
+def run_2026_s5_swing() -> tuple[float, float | None, float | None, float, pd.Series, float]:
+    """Swing S5 sobre datos diarios de 2026 usando BacktestEngine."""
+    daily_data = load_daily_2026_data()
+    symbols = [s for s in UNIVERSE_12 if s != "SPY"]
+    strat = DualMomentumLeaderStrategy(
+        top_n_leaders=4,
+        universe=symbols,
+        trailing_ema_period=25,
+        stop_buffer_pct=0.035,
+        max_holding_days=30,
+    )
+    config = BacktestConfig(
+        strategy=strat,
+        universe=symbols,
+        initial_capital=Decimal("2000.00"),
+        max_open_positions=4,
+        single_position_cap=0.25,
+        trailing_ema_period=25,
+        stop_buffer_pct=0.035,
+        max_holding_sessions=30,
+        apply_retail_costs=True,
+        integer_shares=False,
+    )
+    engine = BacktestEngine(config=config, historical_daily=daily_data)
+    res = engine.run(start_date=SAMPLE_5M_START, end_date=SAMPLE_5M_END, resolution="daily")
+    ret, cagr, sharpe, max_dd, rets, se = compute_metrics(res.equity_curve, 2000.0)
+    return ret, cagr, sharpe, max_dd, rets, se
 
-    for d in dates_2026:
-        d_str = d.strftime("%Y-%m-%d")
-        sub_daily = {s: daily_data[s][daily_data[s]["date"] <= d] for s in UNIVERSE_12}
-        sub_spy_d = daily_data["SPY"][daily_data["SPY"]["date"] <= d]
 
-        # Barras de 5m disponibles hasta el final de la sesión d
-        sub_intraday = {
-            s: intraday_5m_data[s][intraday_5m_data[s]["date"] <= d_str]
-            for s in UNIVERSE_12 if s in intraday_5m_data
-        }
+def run_2026_s7_simulation(
+    sign_p: float = 1.0,
+) -> tuple[float, float | None, float | None, float, pd.Series, float]:
+    """S7 PID Scorer sobre datos de 2026 usando BacktestEngine."""
+    daily_data = load_daily_2026_data()
+    symbols = [s for s in UNIVERSE_12 if s != "SPY"]
+    strat = S7PIDScorerStrategy(universe=symbols, sign_p=sign_p, top_n=4)
+    config = BacktestConfig(
+        strategy=strat,
+        universe=symbols,
+        initial_capital=Decimal("2000.00"),
+        max_open_positions=4,
+        single_position_cap=0.25,
+        trailing_ema_period=25,
+        apply_retail_costs=True,
+        integer_shares=False,
+    )
+    engine = BacktestEngine(config=config, historical_daily=daily_data)
+    res = engine.run(start_date=SAMPLE_5M_START, end_date=SAMPLE_5M_END, resolution="daily")
+    ret, cagr, sharpe, max_dd, rets, se = compute_metrics(res.equity_curve, 2000.0)
+    return ret, cagr, sharpe, max_dd, rets, se
 
-        # Calcular scores S8 con los 8 horizontes (incluyendo 5m, 15m, 30m, 1h, 2h)
-        scores_dict = score_universe_s8(
-            universe_daily=sub_daily,
-            universe_intraday=sub_intraday,
-            df_spy=sub_spy_d,
-            sign_p=sign_p,
-            weight_rule=weight_rule,
-        )
 
-        # Salidas
-        for s in list(open_pos.keys()):
-            pos = open_pos[s]
-            pos["days"] += 1
-            cur_bar = sub_daily[s].iloc[-1]
-            c_now = float(cur_bar["close"])
-            l_now = float(cur_bar["low"]) if "low" in cur_bar else c_now
-            s_ema25 = float(sub_daily[s]["close"].ewm(span=25, adjust=False).mean().iloc[-1])
-
-            res_s8 = scores_dict.get(s)
-            d_stress = res_s8.d_stress if res_s8 else 0.0
-
-            hit_stop = (l_now <= pos["stop"])
-            hit_trail = (c_now < s_ema25)
-            hit_max = (pos["days"] >= 30)
-            forced_exit_stress = (d_stress > 2.0)
-
-            if hit_stop or hit_trail or hit_max or forced_exit_stress:
-                exit_p = (pos["stop"] if hit_stop else c_now) * (1.0 - 0.0003)
-                gross = exit_p * pos["shares"]
-                fees = calculate_alpaca_fees(gross, pos["shares"])
-                cash += (gross - fees)
-                del open_pos[s]
-            else:
-                pos["stop"] = max(pos["stop"], s_ema25 * 0.98)
-
-        # Entradas
-        if len(open_pos) < 4:
-            eligible_cands = []
-            for s, res in scores_dict.items():
-                if s in open_pos or s == "SPY":
-                    continue
-                if res.is_eligible:
-                    c_now = float(sub_daily[s].iloc[-1]["close"])
-                    eligible_cands.append((s, res.u_score, res.d_stress, c_now))
-
-            if eligible_cands:
-                eligible_cands.sort(key=lambda x: x[1], reverse=True)
-                tot_eq = cash + sum(p["shares"] * float(sub_daily[sym].iloc[-1]["close"]) for sym, p in open_pos.items())
-                slots = 4 - len(open_pos)
-                for s, u_score, d_stress, c_now in eligible_cands[:slots]:
-                    attenuation = max(0.5, 1.0 - 0.5 * max(0.0, d_stress))
-                    alloc = min(cash, tot_eq * 0.25 * attenuation)
-                    if alloc < 20.0:
-                        break
-                    entry_p = c_now * (1.0 + 0.0003)
-                    shares = round(alloc / entry_p, 4)
-                    if shares <= 0:
-                        continue
-                    cost = shares * entry_p
-                    cash -= cost
-                    open_pos[s] = {
-                        "shares": shares,
-                        "entry_p": entry_p,
-                        "cost": cost,
-                        "stop": entry_p * (1.0 - 0.035),
-                        "days": 0,
-                    }
-
-        curr_inv = sum(p["shares"] * float(sub_daily[s].iloc[-1]["close"]) for s, p in open_pos.items())
-        equity_hist[d_str] = cash + curr_inv
-
-    eq_s = pd.Series(equity_hist)
-    ret, cagr, sharpe, max_dd, rets = compute_metrics(eq_s, initial_cap)
-    return ret, cagr, sharpe, max_dd, rets
+def run_2026_s8_simulation(
+    weight_rule: str = "A", sign_p: float = 1.0
+) -> tuple[float, float | None, float | None, float, pd.Series, float]:
+    """S8 PID Multi-Horizonte sobre 2026 usando BacktestEngine."""
+    daily_data = load_daily_2026_data()
+    intraday_5m = load_5m_2026_data()
+    symbols = [s for s in UNIVERSE_12 if s != "SPY"]
+    strat = S8PIDMultihorizonStrategy(universe=symbols, weight_rule=weight_rule, sign_p=sign_p, top_n=4)
+    config = BacktestConfig(
+        strategy=strat,
+        universe=symbols,
+        initial_capital=Decimal("2000.00"),
+        max_open_positions=4,
+        single_position_cap=0.25,
+        trailing_ema_period=25,
+        apply_retail_costs=True,
+        integer_shares=False,
+    )
+    engine = BacktestEngine(config=config, historical_daily=daily_data, historical_intraday=intraday_5m)
+    res = engine.run(start_date=SAMPLE_5M_START, end_date=SAMPLE_5M_END, resolution="daily")
+    ret, cagr, sharpe, max_dd, rets, se = compute_metrics(res.equity_curve, 2000.0)
+    return ret, cagr, sharpe, max_dd, rets, se
 
 
 def main():
     print("Ejecutando pruebas sobre las 60 jornadas disponibles de 2026 con barras de 5 minutos...")
-    spy_ret, spy_cagr, spy_sharpe, spy_dd, spy_rets = get_2026_spy_metrics()
-    s6_ret, s6_cagr, s6_sharpe, s6_dd, s6_rets = run_2026_s6_intraday()
-    s5_ret, s5_cagr, s5_sharpe, s5_dd, s5_rets = run_2026_s5_swing()
-    s7_ret, s7_cagr, s7_sharpe, s7_dd, s7_rets = run_2026_s7_simulation(sign_p=1.0)
-    s7_rev_ret, s7_rev_cagr, s7_rev_sharpe, s7_rev_dd, s7_rev_rets = run_2026_s7_simulation(sign_p=-1.0)
-    s8_a_ret, s8_a_cagr, s8_a_sharpe, s8_a_dd, s8_a_rets = run_2026_s8_simulation(weight_rule="A", sign_p=1.0)
-    s8_b_ret, s8_b_cagr, s8_b_sharpe, s8_b_dd, s8_b_rets = run_2026_s8_simulation(weight_rule="B", sign_p=1.0)
+    spy_ret, spy_cagr, spy_sharpe, spy_dd, spy_rets, spy_se = get_2026_spy_metrics()
+    s6_ret, s6_cagr, s6_sharpe, s6_dd, s6_rets, s6_se = run_2026_s6_intraday()
+    s5_ret, s5_cagr, s5_sharpe, s5_dd, s5_rets, s5_se = run_2026_s5_swing()
+    s7_ret, s7_cagr, s7_sharpe, s7_dd, s7_rets, s7_se = run_2026_s7_simulation(sign_p=1.0)
+    s7_rev_ret, s7_rev_cagr, s7_rev_sharpe, s7_rev_dd, s7_rev_rets, s7_rev_se = run_2026_s7_simulation(sign_p=-1.0)
+    s8_a_ret, s8_a_cagr, s8_a_sharpe, s8_a_dd, s8_a_rets, s8_a_se = run_2026_s8_simulation(weight_rule="A", sign_p=1.0)
+    s8_b_ret, s8_b_cagr, s8_b_sharpe, s8_b_dd, s8_b_rets, s8_b_se = run_2026_s8_simulation(weight_rule="B", sign_p=1.0)
 
-    s6_alpha, _ = compute_alpha_beta(s6_rets, spy_rets, s6_cagr, spy_cagr)
-    s5_alpha, _ = compute_alpha_beta(s5_rets, spy_rets, s5_cagr, spy_cagr)
-    s7_alpha, _ = compute_alpha_beta(s7_rets, spy_rets, s7_cagr, spy_cagr)
-    s7_rev_alpha, _ = compute_alpha_beta(s7_rev_rets, spy_rets, s7_rev_cagr, spy_cagr)
-    s8_a_alpha, _ = compute_alpha_beta(s8_a_rets, spy_rets, s8_a_cagr, spy_cagr)
-    s8_b_alpha, _ = compute_alpha_beta(s8_b_rets, spy_rets, s8_b_cagr, spy_cagr)
+    s6_ols = compute_alpha_beta(s6_rets, spy_rets)
+    s5_ols = compute_alpha_beta(s5_rets, spy_rets)
+    s7_ols = compute_alpha_beta(s7_rets, spy_rets)
+    s7_rev_ols = compute_alpha_beta(s7_rev_rets, spy_rets)
+    s8_a_ols = compute_alpha_beta(s8_a_rets, spy_rets)
+    s8_b_ols = compute_alpha_beta(s8_b_rets, spy_rets)
 
-    print("\n" + "=" * 130)
+    print("\n" + "=" * 145)
     print("   COMPARATIVA 2026 CON BARRAS DE 5 MINUTOS (2026-06-26 a 2026-09-21: 60 Sesiones, 4.632 Barras de 5m)")
-    print("=" * 130)
-    print(f"{'Estrategia / Modelo':<45} | {'Ret. Acumulado':<15} | {'CAGR Anual':<12} | {'Alpha vs SPY':<13} | {'Sharpe':<7} | {'MaxDD'}")
-    print("-" * 130)
-    print(f"{'S&P 500 (SPY — Benchmark)':<45} | {spy_ret:+13.2f}% | {spy_cagr:+10.2f}% | {'0.00%':<13} | {spy_sharpe:5.2f} | {spy_dd:5.2f}%")
-    print(f"{'High Frequency / Intraday (S6 5m)':<45} | {s6_ret:+13.2f}% | {s6_cagr:+10.2f}% | {s6_alpha:+11.2f}% | {s6_sharpe:5.2f} | {s6_dd:5.2f}%")
-    print(f"{'Swing Trading (S5 / 30 días)':<45} | {s5_ret:+13.2f}% | {s5_cagr:+10.2f}% | {s5_alpha:+11.2f}% | {s5_sharpe:5.2f} | {s5_dd:5.2f}%")
-    print(f"{'S7 PID Scorer (Tendencia s=+1)':<45} | {s7_ret:+13.2f}% | {s7_cagr:+10.2f}% | {s7_alpha:+11.2f}% | {s7_sharpe:5.2f} | {s7_dd:5.2f}%")
-    print(f"{'S7 PID Scorer (Reversión s=-1)':<45} | {s7_rev_ret:+13.2f}% | {s7_rev_cagr:+10.2f}% | {s7_rev_alpha:+11.2f}% | {s7_rev_sharpe:5.2f} | {s7_rev_dd:5.2f}%")
-    print(f"{'S8 PID Multi-Horizonte (Variante A: w ~ h)':<45} | {s8_a_ret:+13.2f}% | {s8_a_cagr:+10.2f}% | {s8_a_alpha:+11.2f}% | {s8_a_sharpe:5.2f} | {s8_a_dd:5.2f}%")
-    print(f"{'S8 PID Multi-Horizonte (Variante B: w ~ ln h)':<45} | {s8_b_ret:+13.2f}% | {s8_b_cagr:+10.2f}% | {s8_b_alpha:+11.2f}% | {s8_b_sharpe:5.2f} | {s8_b_dd:5.2f}%")
-    print("=" * 130)
+    print("   NOTA METODOLÓGICA (B-08): Muestra T=60 < 252 sesiones; anualización prohibida. Se reporta Ret. Período y SE(Sharpe).")
+    print("=" * 145)
+    print(f"{'Estrategia / Modelo':<45} | {'Ret. Periodo':<13} | {'CAGR':<12} | {'Sharpe':<18} | {'Alpha OLS (SE)':<20} | {'t-stat (p-val)':<16} | {'Beta':<7} | {'R2':<6} | {'MaxDD'}")
+    print("-" * 145)
+
+    models = [
+        ("S&P 500 (SPY — Benchmark)", spy_ret, spy_cagr, spy_sharpe, spy_se, None, spy_dd),
+        ("High Frequency / Intraday (S6 5m)", s6_ret, s6_cagr, s6_sharpe, s6_se, s6_ols, s6_dd),
+        ("Swing Trading (S5 / 30 días)", s5_ret, s5_cagr, s5_sharpe, s5_se, s5_ols, s5_dd),
+        ("S7 PID Scorer (Tendencia s=+1)", s7_ret, s7_cagr, s7_sharpe, s7_se, s7_ols, s7_dd),
+        ("S7 PID Scorer (Reversión s=-1)", s7_rev_ret, s7_rev_cagr, s7_rev_sharpe, s7_rev_se, s7_rev_ols, s7_rev_dd),
+        ("S8 PID Multi-Horizonte (Variante A: w ~ h)", s8_a_ret, s8_a_cagr, s8_a_sharpe, s8_a_se, s8_a_ols, s8_a_dd),
+        ("S8 PID Multi-Horizonte (Variante B: w ~ ln h)", s8_b_ret, s8_b_cagr, s8_b_sharpe, s8_b_se, s8_b_ols, s8_b_dd),
+    ]
+
+    for name, ret_p, cagr_v, sh_v, se_v, ols_v, dd_v in models:
+        cagr_s = f"{cagr_v:+6.2f}%" if cagr_v is not None else "N/A (T<252)"
+        sh_s = f"{sh_v:5.2f}" if sh_v is not None else f"N/A (SE={se_v:.3f})"
+        if ols_v is not None:
+            alpha_s = f"{ols_v.alpha_annualized:+6.2f}% ({ols_v.alpha_se:.2f}%)"
+            t_s = f"{ols_v.alpha_tstat:+5.2f} (p={ols_v.alpha_pvalue:.3f})"
+            beta_s = f"{ols_v.beta:5.2f}"
+            r2_s = f"{ols_v.r_squared:5.2f}"
+        else:
+            alpha_s = "0.00% (ref)"
+            t_s = "N/A"
+            beta_s = "1.00"
+            r2_s = "1.00"
+        print(f"{name:<45} | {ret_p:+11.2f}% | {cagr_s:<12} | {sh_s:<18} | {alpha_s:<20} | {t_s:<16} | {beta_s:<7} | {r2_s:<6} | {dd_v:5.2f}%")
+    print("=" * 145)
 
 
 if __name__ == "__main__":

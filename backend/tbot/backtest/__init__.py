@@ -1,7 +1,14 @@
 """Módulo de backtesting, replay determinista y métricas cuantitativas."""
 
 from tbot.backtest.data_loader import HistoricalDataLoader
-from tbot.backtest.engine import ReplayEngine
+from tbot.backtest.engine import (
+    BacktestConfig,
+    BacktestEngine,
+    BacktestResult,
+    BlockConfig,
+    CircuitBreakerEvent,
+    ReplayEngine,
+)
 from tbot.backtest.metrics import (
     BacktestMetrics,
     calculate_deflated_sharpe_ratio,
@@ -15,7 +22,12 @@ from tbot.backtest.simulated_broker import (
 
 __all__ = [
     "HistoricalDataLoader",
+    "BacktestEngine",
     "ReplayEngine",
+    "BacktestConfig",
+    "BlockConfig",
+    "BacktestResult",
+    "CircuitBreakerEvent",
     "BacktestMetrics",
     "calculate_deflated_sharpe_ratio",
     "compute_backtest_metrics",

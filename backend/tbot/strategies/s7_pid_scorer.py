@@ -27,12 +27,20 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from tbot.indicators.pure import ema
+from tbot.regime.filter import MarketRegime
+from tbot.strategies.interfaces import (
+    Signal,
+    StrategyContext,
+    StrategyDataRequirements,
+    compute_signal_id,
+)
 
 
 @dataclass
@@ -140,7 +148,7 @@ def compute_pid_terms_for_asset(
     sub_prev_c = closes.shift(1).iloc[-len(sub_opens):]
     gap_count = 0
     tot_checked = 0
-    for o, pc in zip(sub_opens, sub_prev_c):
+    for o, pc in zip(sub_opens, sub_prev_c, strict=False):
         if np.isnan(o) or np.isnan(pc) or pc <= 0:
             continue
         tot_checked += 1
@@ -261,3 +269,87 @@ def score_universe_pid(
         out_dict[s].rank_u = rank_idx
 
     return out_dict
+
+
+class S7PIDScorerStrategy:
+    """Implementación formal de la Estrategia S7 PID Scorer como Strategy."""
+
+    id: str = "s7_pid_scorer"
+    version: str = "1.0.0"
+    schedule: list[str] = ["15:45 America/New_York"]
+    allowed_regimes: set[MarketRegime] = {
+        MarketRegime.BULL_CALM,
+        MarketRegime.BULL_VOLATILE,
+    }
+    allows_open_window: bool = False
+    universe: list[str] | None = None
+    data_requirements: StrategyDataRequirements = StrategyDataRequirements(
+        needs_daily_bars=True,
+        daily_lookback_days=75,
+        needs_intraday_bars=False,
+        requires_sip_delayed=True,
+    )
+
+    def __init__(
+        self,
+        universe: list[str] | None = None,
+        sign_p: float = 1.0,
+        top_n: int = 4,
+        stop_buffer_pct: float = 0.035,
+        max_holding_days: int = 30,
+    ) -> None:
+        self.universe = universe
+        self.sign_p = sign_p
+        self.top_n = top_n
+        self.stop_buffer_pct = stop_buffer_pct
+        self.max_holding_days = max_holding_days
+
+    def generate(self, ctx: StrategyContext) -> list[Signal]:
+        """Evalúa las condiciones y genera señales para los activos elegibles con mayor u_score."""
+        if ctx.regime not in self.allowed_regimes:
+            return []
+
+        df_spy = ctx.daily_bars.get("SPY")
+        scores = score_universe_pid(
+            universe_data=ctx.daily_bars,
+            df_spy=df_spy,
+            sign_p=self.sign_p,
+        )
+
+        candidates = []
+        for sym, res in scores.items():
+            if self.universe and sym not in self.universe:
+                continue
+            if sym in ctx.portfolio_positions:
+                continue
+            if res.is_eligible:
+                cur_price = ctx.current_prices.get(sym)
+                if cur_price is None and sym in ctx.daily_bars:
+                    cur_price = Decimal(str(round(float(ctx.daily_bars[sym]["close"].iloc[-1]), 4)))
+                if cur_price is not None and cur_price > Decimal("0"):
+                    candidates.append((sym, res.u_score, res.d_stress, cur_price))
+
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        signals: list[Signal] = []
+
+        for sym, u_score, d_stress, cur_p in candidates[: self.top_n]:
+            stop_p = cur_p * Decimal(str(1.0 - self.stop_buffer_pct))
+            sig_id = compute_signal_id(self.id, self.version, sym, ctx.now)
+            signals.append(
+                Signal(
+                    signal_id=sig_id,
+                    strategy_id=self.id,
+                    symbol=sym,
+                    side="buy",
+                    entry_type="market",
+                    entry_price_ref=cur_p,
+                    stop_price=Decimal(str(round(float(stop_p), 4))),
+                    created_at=ctx.now,
+                    max_holding=timedelta(days=self.max_holding_days),
+                    score=float(min(1.0, max(0.1, u_score / 3.0))),
+                    features={"u_score": u_score, "d_stress": d_stress},
+                )
+            )
+
+        return signals
+

@@ -20,26 +20,27 @@ import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = PROJECT_ROOT / "backend"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
 DATA_14_DIR = PROJECT_ROOT / "data" / "historical_14"
 RF_FILE = PROJECT_ROOT / "data" / "risk_free_rate_bil.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
-
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from optimize_and_benchmark_portfolio import (
     TradeRecord,
     compute_drawdown,
-    compute_sharpe,
-    ema,
     load_all_market_data,
 )
-from run_phase2_institutional_metrics import get_transaction_cost
-from tbot.regime.filter import MarketRegime
 
 UNIVERSE_14 = [
     "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST", "GLD", "SLV"
@@ -81,294 +82,48 @@ def run_s5_mobility_simulation(
     apply_costs: bool = True,
     integer_shares: bool = True,
 ) -> MobilitySimResult:
-    all_symbols = [s for s in daily_data.keys() if s != "SPY"]
-    spy_df = daily_data["SPY"]
+    """Ejecuta la simulación de movilidad de capital usando el motor unificado BacktestEngine."""
+    from decimal import Decimal
 
-    all_dates = sorted(
-        set.intersection(
-            *[
-                set(
-                    df[
-                        (df["_parsed_date"] >= start_date)
-                        & (df["_parsed_date"] <= end_date)
-                    ]["_parsed_date"]
-                )
-                for s, df in daily_data.items()
-                if s in all_symbols or s == "SPY"
-            ]
-        )
+    from tbot.backtest.engine import BacktestConfig, BacktestEngine
+    from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
+
+    all_symbols = [s for s in daily_data if s != "SPY"]
+    strat = DualMomentumLeaderStrategy(
+        momentum_lookback_days=momentum_lookback_days,
+        top_n_leaders=top_n,
+        trailing_ema_period=trailing_ema_period,
+        stop_buffer_pct=0.05,
+        max_holding_days=max_holding_days,
+        universe=all_symbols,
     )
+    config = BacktestConfig(
+        strategy=strat,
+        universe=all_symbols,
+        initial_capital=Decimal("2000.00"),
+        max_open_positions=top_n,
+        single_position_cap=max_weight,
+        enable_circuit_breakers=True,
+        daily_loss_limit_pct=2.0,
+        emergency_loss_limit_pct=3.5,
+        trailing_ema_period=trailing_ema_period,
+        stop_buffer_pct=0.015,
+        max_holding_sessions=max_holding_days,
+        exit_on_bear_regime=True,
+        enable_cash_yield=True,
+        rf_series=pd.Series(rf_daily_map),
+        rebalance_cadence="weekly_friday" if weekly_reevaluation else "daily",
+        integer_shares=integer_shares,
+        apply_retail_costs=apply_costs,
+    )
+    engine = BacktestEngine(config=config, historical_daily=daily_data)
+    result = engine.run(start_date=start_date, end_date=end_date)
 
-    initial_capital = 2000.0
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
-    closed_trades: list[TradeRecord] = []
-    equity_history: dict[date, float] = {}
-
-    total_spread_cost = 0.0
-    total_slippage_cost = 0.0
-    cb_flattens = 0
-
-    pause_thresh = 2.0
-    emergency_thresh = 3.5
-
-    for cur_date in all_dates:
-        daily_rf = rf_daily_map.get(cur_date, 0.0)
-        is_friday = cur_date.weekday() == 4
-
-        # 1. Equity de apertura
-        opening_invested = 0.0
-        for s, p in open_positions.items():
-            bar_open = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["open"].iloc[0])
-            opening_invested += p["shares"] * bar_open
-        daily_starting_equity = cash + opening_invested
-
-        # 2. Cortacircuitos intradiarios
-        can_open_new = True
-        emergency_triggered = False
-
-        if open_positions:
-            worst_intraday_invested = 0.0
-            for s, p in open_positions.items():
-                bar_low = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["low"].iloc[0])
-                worst_intraday_invested += p["shares"] * bar_low
-
-            worst_intraday_equity = cash + worst_intraday_invested
-            intraday_loss_pct = (
-                ((daily_starting_equity - worst_intraday_equity) / daily_starting_equity) * 100.0
-                if daily_starting_equity > 0
-                else 0.0
-            )
-
-            if intraday_loss_pct >= emergency_thresh:
-                emergency_triggered = True
-                can_open_new = False
-                cb_flattens += 1
-                cash_recovered = 0.0
-                for sym in list(open_positions.keys()):
-                    pos = open_positions[sym]
-                    bar = daily_data[sym][daily_data[sym]["_parsed_date"] == cur_date].iloc[0]
-                    raw_ex = float(bar["low"])
-                    h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-                    ex_p = raw_ex * (1.0 - h_spd - slip)
-                    total_spread_cost += raw_ex * h_spd * pos["shares"]
-                    total_slippage_cost += raw_ex * slip * pos["shares"]
-
-                    pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-                    cash_recovered += ex_p * pos["shares"]
-                    closed_trades.append(
-                        TradeRecord(
-                            symbol=sym,
-                            entry_date=pos["entry_date"],
-                            exit_date=cur_date,
-                            entry_price=pos["entry_price"],
-                            exit_price=ex_p,
-                            shares=pos["shares"],
-                            pnl_usd=pnl,
-                            pnl_pct=(ex_p - pos["entry_price"]) / pos["entry_price"],
-                            pnl_r=0.0,
-                            exit_reason="circuit_breaker_emergency_flatten",
-                        )
-                    )
-                    del open_positions[sym]
-                cash += cash_recovered
-
-            elif intraday_loss_pct >= pause_thresh:
-                can_open_new = False
-
-        if emergency_triggered:
-            if daily_rf > 0:
-                cash *= (1.0 + daily_rf)
-            equity_history[cur_date] = cash
-            continue
-
-        # 3. Filtro de Régimen Macro SPY > EMA50
-        spy_past = spy_df[spy_df["_parsed_date"] < cur_date]
-        regime = MarketRegime.BULL_CALM
-        if len(spy_past) >= 50:
-            spy_c = float(spy_past["close"].iloc[-1])
-            spy_ema50 = ema(spy_past["close"], 50).iloc[-1]
-            if spy_c < spy_ema50:
-                regime = MarketRegime.BEAR
-
-        # 4. Reevaluación Semanal de Momentum (Configuración 3)
-        weekly_replace_symbols = set()
-        if weekly_reevaluation and is_friday and regime == MarketRegime.BULL_CALM and open_positions:
-            # Calcular ranking de momentum de todos los activos hoy
-            all_moms = []
-            for s in all_symbols:
-                past_d = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]
-                if len(past_d) < momentum_lookback_days:
-                    continue
-                c_now = float(past_d["close"].iloc[-1])
-                c_past = float(past_d["close"].iloc[-momentum_lookback_days])
-                if c_past > 0:
-                    mom = (c_now - c_past) / c_past
-                    all_moms.append((s, mom))
-
-            all_moms.sort(key=lambda x: x[1], reverse=True)
-            ranked_tickers = [x[0] for x in all_moms]
-
-            for s in list(open_positions.keys()):
-                pos_rank = (ranked_tickers.index(s) + 1) if s in ranked_tickers else 999
-                if pos_rank > reevaluation_cutoff_rank:
-                    weekly_replace_symbols.add(s)
-
-        # 5. Salidas diarias
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["days_held"] += 1
-            bar = daily_data[sym][daily_data[sym]["_parsed_date"] == cur_date].iloc[0]
-            cur_close = float(bar["close"])
-
-            past_closes = daily_data[sym][daily_data[sym]["_parsed_date"] <= cur_date]["close"].astype(float)
-            trailing_ema = ema(past_closes, trailing_ema_period).iloc[-1]
-
-            hit_stop = (pos["days_held"] >= 3 and cur_close < trailing_ema)
-            hit_max_hold = (pos["days_held"] >= max_holding_days)
-            bear_exit = (regime == MarketRegime.BEAR)
-            weekly_drop = (sym in weekly_replace_symbols)
-
-            if hit_stop or hit_max_hold or bear_exit or weekly_drop:
-                h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-                exit_price = cur_close * (1.0 - h_spd - slip)
-                total_spread_cost += cur_close * h_spd * pos["shares"]
-                total_slippage_cost += cur_close * slip * pos["shares"]
-
-                pnl = (exit_price - pos["entry_price"]) * pos["shares"]
-                cash += exit_price * pos["shares"]
-
-                if weekly_drop:
-                    reason = "weekly_rank_drop"
-                elif hit_stop:
-                    reason = "trailing_ema"
-                elif hit_max_hold:
-                    reason = "max_hold"
-                else:
-                    reason = "regime_bear"
-
-                closed_trades.append(
-                    TradeRecord(
-                        symbol=sym,
-                        entry_date=pos["entry_date"],
-                        exit_date=cur_date,
-                        entry_price=pos["entry_price"],
-                        exit_price=exit_price,
-                        shares=pos["shares"],
-                        pnl_usd=pnl,
-                        pnl_pct=(exit_price - pos["entry_price"]) / pos["entry_price"],
-                        pnl_r=0.0,
-                        exit_reason=reason,
-                    )
-                )
-                del open_positions[sym]
-
-        # 6. Entradas
-        if regime == MarketRegime.BULL_CALM and can_open_new:
-            available_slots = top_n - len(open_positions)
-            if available_slots > 0:
-                candidates = []
-                for sym in all_symbols:
-                    if sym in open_positions:
-                        continue
-                    past_d = daily_data[sym][daily_data[sym]["_parsed_date"] <= cur_date]
-                    if len(past_d) < momentum_lookback_days:
-                        continue
-                    closes = past_d["close"].astype(float)
-                    cur_close = float(closes.iloc[-1])
-                    t_ema = ema(closes, trailing_ema_period).iloc[-1]
-                    if cur_close < t_ema:
-                        continue
-                    p_past = float(closes.iloc[-momentum_lookback_days])
-                    if p_past <= 0:
-                        continue
-                    mom_pct = (cur_close - p_past) / p_past
-                    if mom_pct <= 0:
-                        continue
-                    candidates.append((sym, mom_pct, cur_close))
-
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                selected = candidates[:available_slots]
-
-                cur_inv = sum(
-                    p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    for s, p in open_positions.items()
-                )
-                total_equity = cash + cur_inv
-
-                for sym, mom_pct, raw_entry in selected:
-                    target_alloc = min(cash, total_equity * max_weight)
-                    if target_alloc < 25.0:
-                        break
-
-                    h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-                    entry_p = raw_entry * (1.0 + h_spd + slip)
-
-                    if integer_shares:
-                        shares = int(np.floor(target_alloc / entry_p))
-                    else:
-                        shares = target_alloc / entry_p
-
-                    if shares <= 0:
-                        continue
-
-                    cost_val = shares * entry_p
-                    total_spread_cost += raw_entry * h_spd * shares
-                    total_slippage_cost += raw_entry * slip * shares
-
-                    cash -= cost_val
-                    open_positions[sym] = {
-                        "symbol": sym,
-                        "entry_date": cur_date,
-                        "entry_price": entry_p,
-                        "shares": shares,
-                        "stop_loss": entry_p * 0.95,
-                        "initial_stop": entry_p * 0.95,
-                        "days_held": 0,
-                    }
-
-        # 7. Rendimiento de efectivo BIL
-        if daily_rf > 0 and cash > 0:
-            cash *= (1.0 + daily_rf)
-
-        # 8. Cierre de equidad diaria
-        cur_inv = sum(
-            p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-            for s, p in open_positions.items()
-        )
-        equity_history[cur_date] = cash + cur_inv
-
-    # Liquidación final
-    final_date = all_dates[-1]
-    for sym, pos in list(open_positions.items()):
-        raw_ex = float(daily_data[sym][daily_data[sym]["_parsed_date"] == final_date]["close"].iloc[0])
-        h_spd, slip = get_transaction_cost(sym) if apply_costs else (0.0, 0.0)
-        ex_p = raw_ex * (1.0 - h_spd - slip)
-        total_spread_cost += raw_ex * h_spd * pos["shares"]
-        total_slippage_cost += raw_ex * slip * pos["shares"]
-        pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-        cash += ex_p * pos["shares"]
-        closed_trades.append(
-            TradeRecord(
-                symbol=sym,
-                entry_date=pos["entry_date"],
-                exit_date=final_date,
-                entry_price=pos["entry_price"],
-                exit_price=ex_p,
-                shares=pos["shares"],
-                pnl_usd=pnl,
-                pnl_pct=(ex_p - pos["entry_price"]) / pos["entry_price"],
-                pnl_r=0.0,
-                exit_reason="end_of_period",
-            )
-        )
-    equity_history[final_date] = cash
-
-    eq_series = pd.Series(equity_history)
-    final_cap = float(eq_series.iloc[-1])
-    tot_ret = ((final_cap - initial_capital) / initial_capital) * 100.0
+    eq_series = result.equity_curve
+    final_cap = float(eq_series.iloc[-1]) if not eq_series.empty else 2000.0
+    tot_ret = ((final_cap - 2000.0) / 2000.0) * 100.0
     n_years = len(eq_series) / 252.0
-    cagr = ((final_cap / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
+    cagr = ((final_cap / 2000.0) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
 
     max_dd, _ = compute_drawdown(eq_series)
 
@@ -378,18 +133,35 @@ def run_s5_mobility_simulation(
     std_e = float(excess_r.std())
     sharpe = float((excess_r.mean() / std_e) * np.sqrt(252.0)) if std_e > 0 else 0.0
 
-    wins = [t for t in closed_trades if t.pnl_usd > 0]
-    losses = [t for t in closed_trades if t.pnl_usd <= 0]
-    win_rate = (len(wins) / len(closed_trades) * 100.0) if closed_trades else 0.0
+    trade_records = [
+        TradeRecord(
+            symbol=t.symbol,
+            entry_date=t.entry_time.date() if hasattr(t.entry_time, "date") else t.entry_time,
+            exit_date=t.exit_time.date() if hasattr(t.exit_time, "date") else t.exit_time,
+            entry_price=float(t.entry_price),
+            exit_price=float(t.exit_price),
+            shares=float(t.qty),
+            pnl_usd=float(t.pnl),
+            pnl_pct=float(t.pnl_pct),
+            pnl_r=float(t.pnl_r),
+            exit_reason=t.exit_reason,
+        )
+        for t in result.trades
+    ]
+
+    wins = [t for t in trade_records if t.pnl_usd > 0]
+    losses = [t for t in trade_records if t.pnl_usd <= 0]
+    win_rate = (len(wins) / len(trade_records) * 100.0) if trade_records else 0.0
     gp = sum(t.pnl_usd for t in wins)
     gl = abs(sum(t.pnl_usd for t in losses))
     pf = (gp / gl) if gl > 0 else 99.0
 
-    # Días promedio de tenencia
-    avg_hold = float(np.mean([(t.exit_date - t.entry_date).days for t in closed_trades])) if closed_trades else 0.0
+    avg_hold = float(np.mean([(t.exit_date - t.entry_date).days for t in trade_records])) if trade_records else 0.0
 
-    total_fric = total_spread_cost + total_slippage_cost
-    fric_pct = (total_fric / initial_capital) * 100.0
+    total_fric = float(result.metrics.total_fees_paid + result.metrics.total_slippage_cost)
+    fric_pct = (total_fric / 2000.0) * 100.0
+
+    cb_flattens = sum(1 for e in result.circuit_breaker_events if e.event_type == "EMERGENCY_FLATTEN")
 
     return MobilitySimResult(
         config_name=config_name,
@@ -398,7 +170,7 @@ def run_s5_mobility_simulation(
         cagr_pct=cagr,
         sharpe_ratio=sharpe,
         max_drawdown_pct=max_dd,
-        total_trades=len(closed_trades),
+        total_trades=len(trade_records),
         win_rate_pct=win_rate,
         profit_factor=pf,
         avg_holding_days=avg_hold,
@@ -415,6 +187,8 @@ def main() -> int:
     print("=" * 95)
 
     daily_14 = load_all_market_data(DATA_14_DIR, symbols=UNIVERSE_14)
+    print(f"[OK] Cargados {len(daily_14)} activos.")
+
     rf_df = pd.read_csv(RF_FILE)
     rf_df["_date"] = pd.to_datetime(rf_df["date"]).dt.date
     rf_map = dict(zip(rf_df["_date"], rf_df["daily_rf"]))
@@ -426,13 +200,12 @@ def main() -> int:
         ("4. Top-4 (hold=30d, Amplitud propuesta)", 4, 0.25, 30, False),
     ]
 
+    # Períodos de desarrollo (2020-2022) conformes a Rule 0 Holdout Guard
     periods = [
         ("Trienio 2020–2022", date(2020, 1, 2), date(2022, 12, 30)),
-        ("Muestra Completa 2020–2025", date(2020, 1, 2), date(2025, 12, 31)),
         ("2020", date(2020, 1, 2), date(2020, 12, 31)),
         ("2021", date(2021, 1, 4), date(2021, 12, 31)),
         ("2022", date(2022, 1, 3), date(2022, 12, 30)),
-        ("2025", date(2025, 1, 2), date(2025, 12, 31)),
     ]
 
     results: dict[str, dict[str, MobilitySimResult]] = {c[0]: {} for c in configs}
@@ -463,16 +236,15 @@ def main() -> int:
     print("\n" + "=" * 110)
     print("                RESULTADOS COMPARATIVOS DEL TEST DE MOVILIDAD DE CAPITAL (T-15)")
     print("=" * 110)
-    print(f"{'Configuración':<42} | {'Trienio 20-22':<13} | {'Muestra 20-25':<13} | {'Sharpe':<6} | {'MaxDD':<7} | {'Trades':<6} | {'Flattens':<8}")
+    print(f"{'Configuración':<42} | {'Trienio 20-22':<13} | {'Sharpe':<6} | {'MaxDD':<7} | {'Trades':<6} | {'Flattens':<8}")
     print("-" * 110)
 
     for c_name, _, _, _, _ in configs:
         r3 = results[c_name]["Trienio 2020–2022"]
-        rf = results[c_name]["Muestra Completa 2020–2025"]
         print(
             f"{c_name:<42} | {r3.total_return_pct:+7.2f}% ({r3.sharpe_ratio:4.2f}) | "
-            f"{rf.total_return_pct:+7.2f}% ({rf.sharpe_ratio:4.2f}) | {rf.sharpe_ratio:5.2f}  | {rf.max_drawdown_pct:5.2f}% | "
-            f"{rf.total_trades:<6} | {rf.circuit_breaker_flattens:<8}"
+            f"{r3.sharpe_ratio:5.2f}  | {r3.max_drawdown_pct:5.2f}% | "
+            f"{r3.total_trades:<6} | {r3.circuit_breaker_flattens:<8}"
         )
     print("=" * 110)
 
@@ -493,36 +265,34 @@ def main() -> int:
         f.write("- **Hipótesis A (Movilidad de Capital):** Si acelerar la rotación en Top-2 (hold=10d o reemplazo semanal cuando cae del Top-4) iguala el desempeño de Top-4, la ventaja reside en no atrapar capital en posiciones rezagadas, y debe conservarse el mecanismo de movilidad.\n")
         f.write("- **Hipótesis B (Amplitud / Diversificación):** Si solo Top-4 funciona y las variantes de rotación rápida en Top-2 siguen destruidas por costos o whipsaws, la ventaja proviene de la amplitud transversal (reducir el peso de 50% a 25% para no detonar cortacircuitos en correcciones normales).\n\n---\n\n")
 
-        f.write("## 2. Tabla Comparativa General (Trienio y Muestra Completa)\n\n")
-        f.write("| Configuración | Retorno Trienio (2020–22) | Sharpe Trienio | Retorno Muestra (2020–25) | Sharpe Muestra | Max Drawdown | Trades | Días Tenencia Promedio | Liquidaciones CB (2020–25) | Fricción ($) |\n")
-        f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n")
+        f.write("## 2. Tabla Comparativa General (Trienio 2020–2022)\n\n")
+        f.write("| Configuración | Retorno Trienio (2020–22) | Sharpe Trienio | Max Drawdown | Trades | Días Tenencia Promedio | Liquidaciones CB | Fricción ($) |\n")
+        f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n")
 
         for c_name, _, _, _, _ in configs:
             r3 = results[c_name]["Trienio 2020–2022"]
-            rf = results[c_name]["Muestra Completa 2020–2025"]
             f.write(
                 f"| **{c_name}** | **{r3.total_return_pct:+.2f}%** | {r3.sharpe_ratio:.2f} | "
-                f"**{rf.total_return_pct:+.2f}%** | **{rf.sharpe_ratio:.2f}** | {rf.max_drawdown_pct:.2f}% | "
-                f"{rf.total_trades} | {rf.avg_holding_days:.1f}d | **{rf.circuit_breaker_flattens}** | ${rf.total_friction_usd:.2f} |\n"
+                f"{r3.max_drawdown_pct:.2f}% | "
+                f"{r3.total_trades} | {r3.avg_holding_days:.1f}d | **{r3.circuit_breaker_flattens}** | ${r3.total_friction_usd:.2f} |\n"
             )
 
         f.write("\n---\n\n## 3. Desglose Anual de Rendimientos\n\n")
-        f.write("| Configuración | 2020 | 2021 | 2022 | 2025 |\n")
-        f.write("| :--- | :---: | :---: | :---: | :---: |\n")
+        f.write("| Configuración | 2020 | 2021 | 2022 |\n")
+        f.write("| :--- | :---: | :---: | :---: |\n")
 
         for c_name, _, _, _, _ in configs:
             r20 = results[c_name]["2020"].total_return_pct
             r21 = results[c_name]["2021"].total_return_pct
             r22 = results[c_name]["2022"].total_return_pct
-            r25 = results[c_name]["2025"].total_return_pct
-            f.write(f"| **{c_name}** | {r20:+.2f}% | {r21:+.2f}% | {r22:+.2f}% | {r25:+.2f}% |\n")
+            f.write(f"| **{c_name}** | {r20:+.2f}% | {r21:+.2f}% | {r22:+.2f}% |\n")
 
         f.write("\n---\n\n## 4. Dictamen Institucional y Conclusión (Resolución F-20)\n\n")
 
-        r_top2_base = results["1. Top-2 (hold=30d, Baseline)"]["Muestra Completa 2020–2025"]
-        r_top2_10d = results["2. Top-2 (hold=10d, Rotación rápida)"]["Muestra Completa 2020–2025"]
-        r_top2_week = results["3. Top-2 (Reeval. Semanal, reemplazo si rank > 4)"]["Muestra Completa 2020–2025"]
-        r_top4 = results["4. Top-4 (hold=30d, Amplitud propuesta)"]["Muestra Completa 2020–2025"]
+        r_top2_base = results["1. Top-2 (hold=30d, Baseline)"]["Trienio 2020–2022"]
+        r_top2_10d = results["2. Top-2 (hold=10d, Rotación rápida)"]["Trienio 2020–2022"]
+        r_top2_week = results["3. Top-2 (Reeval. Semanal, reemplazo si rank > 4)"]["Trienio 2020–2022"]
+        r_top4 = results["4. Top-4 (hold=30d, Amplitud propuesta)"]["Trienio 2020–2022"]
 
         f.write("### Análisis de Resultados Empíricos:\n")
         f.write(f"1. **Baseline Top-2 (hold=30d):** Retorno **{r_top2_base.total_return_pct:+.2f}%**, Sharpe **{r_top2_base.sharpe_ratio:.2f}**, con **{r_top2_base.circuit_breaker_flattens} liquidaciones forzosas** por cortacircuito.\n")

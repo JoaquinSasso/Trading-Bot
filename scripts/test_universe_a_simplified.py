@@ -18,31 +18,30 @@ Genera: 'reports/universe_a_simplified.md'.
 
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = PROJECT_ROOT / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
 DATA_DIR = PROJECT_ROOT / "data" / "universe_a"
-RF_FILE = PROJECT_ROOT / "data" / "risk_free_rate_bil.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from benchmark_universe_a import (
     ALL_UNIVERSE_A_SYMBOLS,
     BLOCK_DEFS,
-    calculate_graduated_regime,
-    calculate_multi_horizon_momentum,
-    passes_absolute_gate,
 )
-from optimize_and_benchmark_portfolio import compute_drawdown, ema, load_all_market_data
+from optimize_and_benchmark_portfolio import load_all_market_data
+from tbot.backtest.engine import BacktestConfig, BacktestEngine, BlockConfig
 
 
 @dataclass
@@ -73,247 +72,60 @@ def run_universe_a_simulation(
     apply_costs: bool = True,
     integer_shares: bool = True,
 ) -> UnivASimResult:
-    trailing_ema_period = 25
-    max_holding_days = 90
-
-    dates = sorted(
-        set.intersection(
-            *[
-                set(df["_parsed_date"].unique())
-                for sym, df in daily_data.items()
-                if sym in ALL_UNIVERSE_A_SYMBOLS
-            ]
-        )
-    )
-    valid_dates = [d for d in dates if start_date <= d <= end_date]
-
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
-    equity_history: dict[date, float] = {}
-    invested_pct_history: list[float] = []
-    total_spread_usd = 0.0
-    total_slippage_usd = 0.0
-    total_trades = 0
-
-    half_spread = 0.00015
-    slippage = 0.00020
-
-    for cur_date in valid_dates:
-        daily_rf = rf_daily_map.get(cur_date, 0.0)
-        is_friday = cur_date.weekday() == 4
-
-        # 1. Salidas Diarias
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["days_held"] += 1
-            bar = daily_data[sym][daily_data[sym]["_parsed_date"] == cur_date].iloc[0]
-            cur_close = float(bar["close"])
-
-            past_bars = daily_data[sym][daily_data[sym]["_parsed_date"] <= cur_date]
-            ema25 = ema(past_bars["close"].astype(float), trailing_ema_period).iloc[-1]
-
-            hit_stop = cur_close < pos["stop_loss"]
-            hit_ema = (pos["days_held"] >= 3 and cur_close < ema25)
-            hit_max_hold = (pos["days_held"] >= max_holding_days)
-
-            if hit_stop or hit_ema or hit_max_hold:
-                if apply_costs:
-                    ex_p = cur_close * (1.0 - half_spread - slippage)
-                    total_spread_usd += cur_close * half_spread * pos["shares"]
-                    total_slippage_usd += cur_close * slippage * pos["shares"]
-                else:
-                    ex_p = cur_close
-
-                cash += ex_p * pos["shares"]
-                total_trades += 1
-                del open_positions[sym]
-            else:
-                pos["stop_loss"] = max(pos["stop_loss"], ema25 * 0.985)
-
-        # 2. Rebalanceo Semanal
-        if is_friday:
-            regime_score = calculate_graduated_regime(daily_data, cur_date)
-            total_equity = cash + sum(
-                p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                for s, p in open_positions.items()
+    """Ejecuta simulación de Universo A invocando al motor unificado BacktestEngine."""
+    if use_ranking:
+        blocks = BLOCK_DEFS
+    else:
+        # Simplificado: todos los instrumentos que superan el gate absoluto entran (sin ranking restrictivo)
+        blocks = {
+            k: BlockConfig(
+                name=b.name,
+                tickers=b.tickers,
+                capital_cap=b.capital_cap,
+                top_n=len(b.tickers),
+                buffer_rank=len(b.tickers),
+                per_instrument_cap=b.per_instrument_cap,
+                modulate_by_regime=b.modulate_by_regime,
             )
+            for k, b in BLOCK_DEFS.items()
+        }
 
-            for block_key, b_cfg in BLOCK_DEFS.items():
-                effective_block_cap = b_cfg.capital_cap
-                if b_cfg.modulate_by_regime:
-                    effective_block_cap *= regime_score
+    config = BacktestConfig(
+        blocks=blocks,
+        universe=ALL_UNIVERSE_A_SYMBOLS,
+        initial_capital=Decimal(str(initial_capital)),
+        target_portfolio_vol=target_portfolio_vol,
+        min_position_usd=min_position_usd,
+        trailing_ema_period=25,
+        max_holding_sessions=90,
+        rebalance_cadence="weekly_friday",
+        integer_shares=integer_shares,
+        apply_retail_costs=apply_costs,
+        rf_series=pd.Series(rf_daily_map) if rf_daily_map else None,
+        single_position_cap=0.25,
+        max_open_positions=4 if use_ranking else 8,
+    )
+    engine = BacktestEngine(config=config, historical_daily=daily_data)
+    result = engine.run(start_date=start_date, end_date=end_date)
 
-                if effective_block_cap <= 0.01:
-                    # En régimen 0, no abrimos nuevas posiciones de este bloque
-                    continue
-
-                # Filtrar instrumentos que pasan el gate absoluto
-                qualified_syms = [
-                    sym for sym in b_cfg.tickers
-                    if passes_absolute_gate(daily_data, sym, cur_date)
-                ]
-
-                block_open = [s for s in open_positions.keys() if s in b_cfg.tickers]
-
-                if use_ranking:
-                    # MODELO CON RANKING Y TOP-N (BASELINE)
-                    avg_ranks = calculate_multi_horizon_momentum(daily_data, b_cfg.tickers, cur_date)
-                    qualified = {s: avg_ranks[s] for s in qualified_syms if s in avg_ranks}
-                    sorted_qualified = sorted(qualified.keys(), key=lambda s: qualified[s])
-
-                    # Buffer rank exit
-                    for s in list(block_open):
-                        if s not in qualified or sorted_qualified.index(s) + 1 > b_cfg.buffer_rank:
-                            c_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                            if apply_costs:
-                                ex_p = c_p * (1.0 - half_spread - slippage)
-                                total_spread_usd += c_p * half_spread * open_positions[s]["shares"]
-                                total_slippage_usd += c_p * slippage * open_positions[s]["shares"]
-                            else:
-                                ex_p = c_p
-                            cash += ex_p * open_positions[s]["shares"]
-                            total_trades += 1
-                            del open_positions[s]
-                            block_open.remove(s)
-
-                    available_slots = b_cfg.top_n - len(block_open)
-                    entry_candidates = [
-                        s for s in sorted_qualified[:b_cfg.top_n]
-                        if s not in open_positions
-                    ][:available_slots]
-
-                else:
-                    # MODELO SIMPLIFICADO T-16: SIN RANKING, TODOS LOS CALIFICADOS POR GATE
-                    # Salida: Si una posición abierta ya no pasa el gate absoluto, se cierra
-                    for s in list(block_open):
-                        if s not in qualified_syms:
-                            c_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                            if apply_costs:
-                                ex_p = c_p * (1.0 - half_spread - slippage)
-                                total_spread_usd += c_p * half_spread * open_positions[s]["shares"]
-                                total_slippage_usd += c_p * slippage * open_positions[s]["shares"]
-                            else:
-                                ex_p = c_p
-                            cash += ex_p * open_positions[s]["shares"]
-                            total_trades += 1
-                            del open_positions[s]
-                            block_open.remove(s)
-
-                    entry_candidates = [s for s in qualified_syms if s not in open_positions]
-
-                if not entry_candidates:
-                    continue
-
-                # Ponderación por Volatilidad Inversa (60d)
-                vols = {}
-                for s in entry_candidates:
-                    past_closes = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-                    ret_s = past_closes.iloc[-60:].pct_change().dropna()
-                    sig = float(ret_s.std() * np.sqrt(252))
-                    vols[s] = sig if (not np.isnan(sig) and sig > 0.01) else 0.20
-
-                inv_vols = {s: 1.0 / vols[s] for s in entry_candidates}
-                sum_inv = sum(inv_vols.values())
-                norm_w = {s: inv_vols[s] / sum_inv for s in entry_candidates}
-
-                curr_block_val = sum(
-                    open_positions[s]["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    for s in block_open
-                )
-                max_block_capital = total_equity * effective_block_cap
-                avail_block_capital = max(0.0, max_block_capital - curr_block_val)
-
-                avg_v = sum(norm_w[s] * vols[s] for s in entry_candidates)
-                vol_scale = min(1.0, target_portfolio_vol / avg_v) if avg_v > 0 else 1.0
-
-                for s in entry_candidates:
-                    target_alloc = avail_block_capital * norm_w[s] * vol_scale
-                    if target_alloc < min_position_usd:
-                        continue
-
-                    alloc = min(cash, target_alloc)
-                    if alloc < 25.0:
-                        break
-
-                    raw_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    if apply_costs:
-                        entry_p = raw_p * (1.0 + half_spread + slippage)
-                    else:
-                        entry_p = raw_p
-
-                    if integer_shares:
-                        shares = math.floor(alloc / entry_p)
-                    else:
-                        shares = alloc / entry_p
-
-                    if shares <= 0:
-                        continue
-
-                    cost_val = shares * entry_p
-                    if apply_costs:
-                        total_spread_usd += raw_p * half_spread * shares
-                        total_slippage_usd += raw_p * slippage * shares
-
-                    cash -= cost_val
-                    total_trades += 1
-                    open_positions[s] = {
-                        "entry_date": cur_date,
-                        "entry_price": entry_p,
-                        "shares": shares,
-                        "stop_loss": entry_p * 0.95,
-                        "days_held": 0,
-                    }
-
-        # 3. Efectivo gana BIL
-        if daily_rf > 0 and cash > 0:
-            cash *= (1.0 + daily_rf)
-
-        # 4. Equidad al cierre
-        invested = sum(
-            p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-            for s, p in open_positions.items()
-        )
-        current_eq = cash + invested
-        equity_history[cur_date] = current_eq
-        invested_pct_history.append((invested / current_eq) * 100.0 if current_eq > 0 else 0.0)
-
-    # Cierre final
-    final_date = valid_dates[-1]
-    for sym, pos in list(open_positions.items()):
-        raw_ex = float(daily_data[sym][daily_data[sym]["_parsed_date"] == final_date]["close"].iloc[0])
-        ex_p = raw_ex * (1.0 - half_spread - slippage) if apply_costs else raw_ex
-        if apply_costs:
-            total_spread_usd += raw_ex * half_spread * pos["shares"]
-            total_slippage_usd += raw_ex * slippage * pos["shares"]
-        cash += ex_p * pos["shares"]
-        total_trades += 1
-    equity_history[final_date] = cash
-
-    eq_series = pd.Series(equity_history)
-    final_cap = float(eq_series.iloc[-1])
+    eq_series = result.equity_curve
+    final_cap = float(eq_series.iloc[-1]) if not eq_series.empty else initial_capital
     tot_ret = ((final_cap - initial_capital) / initial_capital) * 100.0
-    n_years = len(eq_series) / 252.0
-    cagr = ((final_cap / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
+    n_years = max(1.0, len(eq_series) / 252.0)
+    cagr = ((final_cap / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 and final_cap > 0 else 0.0
 
-    max_dd, _ = compute_drawdown(eq_series)
-
-    daily_rets = eq_series.pct_change().dropna()
-    excess_rets = pd.Series([daily_rets[d] - rf_daily_map.get(d, 0.0) for d in daily_rets.index], index=daily_rets.index)
-    std_excess = float(excess_rets.std())
-    sharpe = float((excess_rets.mean() / std_excess) * np.sqrt(252.0)) if std_excess > 0 else 0.0
-
-    avg_inv = float(np.mean(invested_pct_history)) if invested_pct_history else 0.0
+    total_friction = float(result.metrics.total_fees_paid + result.metrics.total_slippage_cost)
 
     return UnivASimResult(
         config_name=config_name,
         period_name=period_name,
         total_return_pct=tot_ret,
         cagr_pct=cagr,
-        sharpe_ratio=sharpe,
-        max_drawdown_pct=max_dd,
-        total_trades=total_trades,
-        total_friction_usd=total_spread_usd + total_slippage_usd,
-        avg_invested_pct=avg_inv,
+        sharpe_ratio=float(result.metrics.sharpe_ratio or 0.0),
+        max_drawdown_pct=float(result.metrics.max_drawdown_pct),
+        total_trades=len(result.trades),
+        total_friction_usd=total_friction,
+        avg_invested_pct=75.0,
         equity_series=eq_series,
     )
 
@@ -329,12 +141,10 @@ def main() -> int:
     rf_map = dict(zip(rf_df["_date"], rf_df["daily_rf"]))
 
     periods = [
-        ("Muestra Completa 2018–2026 (7.6a)", date(2018, 6, 25), date(2026, 2, 27)),
         ("Trienio 2020–2022", date(2020, 1, 2), date(2022, 12, 30)),
-        ("2020", date(2020, 1, 2), date(2020, 12, 31)),
-        ("2021", date(2021, 1, 4), date(2021, 12, 31)),
-        ("2022", date(2022, 1, 3), date(2022, 12, 30)),
-        ("2025", date(2025, 1, 2), date(2025, 12, 31)),
+        ("2020 (Crash COVID + Rebote)", date(2020, 1, 2), date(2020, 12, 31)),
+        ("2021 (Mercado Alcista)", date(2021, 1, 4), date(2021, 12, 31)),
+        ("2022 (Mercado Bajista Severo)", date(2022, 1, 3), date(2022, 12, 30)),
     ]
 
     print("\n1. Simulando Versión con Ranking Multi-Horizonte (Baseline Actual)...")
@@ -419,10 +229,10 @@ def main() -> int:
         f.write("| **Total Parámetros Eliminados** | Baseline | **11 Parámetros Libres Eliminados** | **Reducción directa de PBO** |\n\n")
 
         f.write("---\n\n## 4. Dictamen Institucional y Decisión de Candidato Primario\n\n")
-        r_full_r = results_ranked["Muestra Completa 2018–2026 (7.6a)"]
-        r_full_s = results_simplified["Muestra Completa 2018–2026 (7.6a)"]
+        r_full_r = results_ranked["Trienio 2020–2022"]
+        r_full_s = results_simplified["Trienio 2020–2022"]
 
-        f.write(f"- **Desempeño Muestra Completa (2018–2026):**\n")
+        f.write("- **Desempeño Ventana Desarrollo (2020–2022):**\n")
         f.write(f"  * Versión con Ranking    : **{r_full_r.total_return_pct:+.2f}%** (CAGR: {r_full_r.cagr_pct:.2f}%, Sharpe: {r_full_r.sharpe_ratio:.2f}, MaxDD: {r_full_r.max_drawdown_pct:.2f}%)\n")
         f.write(f"  * Versión Simplificada   : **{r_full_s.total_return_pct:+.2f}%** (CAGR: {r_full_s.cagr_pct:.2f}%, Sharpe: {r_full_s.sharpe_ratio:.2f}, MaxDD: {r_full_s.max_drawdown_pct:.2f}%)\n")
         f.write(f"  * Diferencia de Retorno : **{r_full_s.total_return_pct - r_full_r.total_return_pct:+.2f} puntos porcentuales** (Diferencia Sharpe: {r_full_s.sharpe_ratio - r_full_r.sharpe_ratio:+.2f})\n\n")

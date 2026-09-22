@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import sys
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import time
 from pathlib import Path
 
 import numpy as np
@@ -35,7 +35,17 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from decimal import Decimal
+
+from tbot.backtest.engine import BacktestConfig, BacktestEngine
+from tbot.backtest.guards import (
+    DEV_HOURLY_END,
+    DEV_HOURLY_START,
+    SAMPLE_5M_END,
+    SAMPLE_5M_START,
+)
 from tbot.indicators.pure import ema
+from tbot.strategies.interfaces import Signal, StrategyContext
 
 UNIVERSE = [
     "SPY", "QQQ", "IWM", "GLD",
@@ -113,6 +123,112 @@ def compute_benchmark_spy(df_spy: pd.DataFrame) -> tuple[float, float, float, fl
     return cum_ret, cagr, sharpe, max_dd, daily_rets
 
 
+class GenericMultiHorizonStrategy:
+    """Estrategia multi-horizonte adaptable a 5m y 1h."""
+    id: str = "generic_multi_horizon"
+    version: str = "1.0.0"
+
+    def __init__(
+        self,
+        horizons_map: dict[str, int],
+        top_n: int = 3,
+        trailing_ema_period: int = 21,
+        initial_stop_pct: float = 0.012,
+        max_holding_bars: int = 36,
+        trend_ema_period: int = 21,
+        flatten_end_of_day: bool = True,
+        flatten_time: time = time(15, 55),
+    ) -> None:
+        self.horizons_map = horizons_map
+        self.top_n = top_n
+        self.trailing_ema_period = trailing_ema_period
+        self.initial_stop_pct = initial_stop_pct
+        self.max_holding_bars = max_holding_bars
+        self.trend_ema_period = trend_ema_period
+        self.flatten_end_of_day = flatten_end_of_day
+        self.flatten_time = flatten_time
+
+    def generate(self, ctx: StrategyContext) -> list[Signal]:
+        cur_dt = ctx.now
+        cur_time = cur_dt.time()
+        if self.flatten_end_of_day and cur_time >= self.flatten_time:
+            return []
+
+        spy_bars = ctx.intraday_bars.get("SPY")
+        if spy_bars is not None and len(spy_bars) >= self.trend_ema_period:
+            spy_closes = spy_bars["close"].astype(float)
+            spy_ema = float(ema(spy_closes, self.trend_ema_period).iloc[-1])
+            if float(spy_closes.iloc[-1]) < spy_ema:
+                return []
+
+        metrics_list = []
+        max_bars_needed = max(self.horizons_map.values()) + 5
+        for sym, df in ctx.intraday_bars.items():
+            if sym == "SPY" or sym in ctx.portfolio_positions:
+                continue
+            if len(df) < max_bars_needed:
+                continue
+            rc = df["close"].astype(float).tolist()
+            c_now = rc[-1]
+
+            m_rets = {}
+            valid = True
+            for h_name, h_bars in self.horizons_map.items():
+                ref_p = rc[-1 - h_bars]
+                if ref_p <= 0:
+                    valid = False
+                    break
+                m_rets[h_name] = (c_now - ref_p) / ref_p
+            if not valid:
+                continue
+
+            s_closes = pd.Series(rc[-40:])
+            e_trend = float(ema(s_closes, self.trend_ema_period).iloc[-1])
+            longest_h = list(self.horizons_map)[-1]
+            shortest_h = next(iter(self.horizons_map))
+
+            if c_now > e_trend and m_rets[longest_h] > 0.0 and m_rets[shortest_h] > 0.0:
+                item_dict = {"sym": sym, "price": c_now}
+                item_dict.update(m_rets)
+                metrics_list.append(item_dict)
+
+        if not metrics_list:
+            return []
+
+        for h_name in self.horizons_map:
+            metrics_list.sort(key=lambda x: x[h_name], reverse=True)
+            for r_i, itm in enumerate(metrics_list, 1):
+                itm[f"rank_{h_name}"] = r_i
+
+        for itm in metrics_list:
+            itm["comp_rank"] = sum(itm[f"rank_{h_name}"] for h_name in self.horizons_map) / len(self.horizons_map)
+
+        metrics_list.sort(key=lambda x: x["comp_rank"])
+        available_slots = self.top_n - len(ctx.portfolio_positions)
+        selected = metrics_list[:available_slots]
+
+        signals = []
+        for cand in selected:
+            sym = cand["sym"]
+            raw_p = Decimal(str(round(cand["price"], 4)))
+            stop_p = raw_p * Decimal(str(round(1.0 - self.initial_stop_pct, 4)))
+            sig = Signal.create(
+                strategy_id=self.id,
+                version=self.version,
+                symbol=sym,
+                bar_ts=cur_dt,
+                side="buy",
+                entry_type="market",
+                entry_price_ref=raw_p,
+                stop_price=stop_p,
+                max_holding=self.max_holding_bars,
+                exit_at_close=self.flatten_end_of_day,
+                score=float(1.0 / cand["comp_rank"]),
+            )
+            signals.append(sig)
+        return signals
+
+
 def run_generic_simulation(
     data_dict: dict[str, pd.DataFrame],
     horizons_map: dict[str, int],  # e.g. {"h1": 2, "h2": 4, ...}
@@ -126,209 +242,65 @@ def run_generic_simulation(
     max_weight_per_asset: float = 0.30,
     flatten_end_of_day: bool = True,
     flatten_time_str: str = "15:55",
+    resolution: str = "5m",
 ) -> dict:
-    """Ejecuta la simulación unificada para cualquier resolución temporal."""
-    all_timestamps = sorted(
-        set.intersection(*[set(df["timestamp"]) for df in data_dict.values()])
+    """Ejecuta la simulación unificada invocando al motor BacktestEngine."""
+    parts = [int(p) for p in flatten_time_str.split(":")]
+    fl_time = time(parts[0], parts[1])
+    strat = GenericMultiHorizonStrategy(
+        horizons_map=horizons_map,
+        top_n=top_n,
+        trailing_ema_period=trailing_ema_period,
+        initial_stop_pct=initial_stop_pct,
+        max_holding_bars=max_holding_bars,
+        trend_ema_period=trend_ema_period,
+        flatten_end_of_day=flatten_end_of_day,
+        flatten_time=fl_time,
     )
-    bar_maps = {
-        sym: {row["timestamp"]: row for _, row in df.iterrows()}
-        for sym, df in data_dict.items()
-    }
+    config = BacktestConfig(
+        strategy=strat,
+        universe=UNIVERSE,
+        initial_capital=Decimal(str(initial_capital)),
+        account_type="cash",
+        max_open_positions=top_n,
+        single_position_cap=max_weight_per_asset,
+        trailing_ema_period=trailing_ema_period,
+        stop_buffer_pct=0.005,
+        integer_shares=False,
+        apply_retail_costs=True,
+        etf_half_spread_bps=half_spread_bps * 10000.0,
+        stock_half_spread_bps=half_spread_bps * 10000.0,
+        enable_circuit_breakers=True,
+        flatten_time=fl_time,
+    )
+    engine = BacktestEngine(config=config, historical_intraday=data_dict)
 
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
-    closed_trades: list[dict] = []
-    equity_history: dict[str, float] = {}
+    if resolution in ("1h", "hourly"):
+        start_d = DEV_HOURLY_START
+        end_d = DEV_HOURLY_END
+    else:
+        start_d = SAMPLE_5M_START
+        end_d = SAMPLE_5M_END
 
-    tot_sec = 0.0
-    tot_taf = 0.0
-    tot_cat = 0.0
-    tot_spread = 0.0
+    res = engine.run(start_date=start_d, end_date=end_d, resolution=resolution)
 
-    rolling_closes: dict[str, list[float]] = {s: [] for s in UNIVERSE}
-
-    for idx, ts in enumerate(all_timestamps):
-        bar_sample = bar_maps["SPY"][ts]
-        cur_dt_str = bar_sample["datetime_et"]
-        cur_time_str = bar_sample["time"]
-
-        for sym in UNIVERSE:
-            b = bar_maps[sym].get(ts)
-            if b is not None:
-                rolling_closes[sym].append(float(b["close"]))
-
-        is_flatten_time = flatten_end_of_day and (cur_time_str >= flatten_time_str)
-
-        # 1. Salidas
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["bars_held"] += 1
-            cur_bar = bar_maps[sym][ts]
-            c_now = float(cur_bar["close"])
-            l_now = float(cur_bar["low"])
-
-            closes_s = pd.Series(rolling_closes[sym][-40:])
-            trailing_ema = float(ema(closes_s, trailing_ema_period).iloc[-1])
-
-            hit_stop = (l_now <= pos["stop_loss"])
-            hit_trailing = (pos["bars_held"] >= 2 and c_now < trailing_ema)
-            hit_max_bars = (pos["bars_held"] >= max_holding_bars)
-            day_end_exit = is_flatten_time
-
-            if hit_stop or hit_trailing or hit_max_bars or day_end_exit:
-                raw_exit = pos["stop_loss"] if hit_stop else c_now
-                reason = "stop_loss" if hit_stop else ("flatten_eod" if day_end_exit else ("trailing_ema" if hit_trailing else "max_bars"))
-
-                exit_price = raw_exit * (1.0 - half_spread_bps)
-                gross_proceeds = exit_price * pos["shares"]
-                spd_loss_exit = raw_exit * half_spread_bps * pos["shares"]
-                tot_spread += spd_loss_exit
-
-                sec_f, taf_f, cat_f = calculate_alpaca_fees(gross_proceeds, pos["shares"])
-                tot_sec += sec_f
-                tot_taf += taf_f
-                tot_cat += cat_f
-
-                net_proceeds = gross_proceeds - (sec_f + taf_f + cat_f)
-                cash += net_proceeds
-
-                net_pnl = net_proceeds - pos["entry_cost"]
-                closed_trades.append({
-                    "symbol": sym,
-                    "net_pnl": net_pnl,
-                    "reason": reason,
-                    "bars_held": pos["bars_held"],
-                })
-                del open_positions[sym]
-            else:
-                pos["stop_loss"] = max(pos["stop_loss"], trailing_ema * 0.995)
-
-        # 2. Entradas
-        can_open = not is_flatten_time
-        if can_open and len(open_positions) < top_n and idx >= 30:
-            spy_closes_s = pd.Series(rolling_closes["SPY"][-40:])
-            spy_trend_ema = float(ema(spy_closes_s, trend_ema_period).iloc[-1])
-            spy_c = rolling_closes["SPY"][-1]
-
-            if spy_c >= spy_trend_ema:
-                metrics_list = []
-                for sym in UNIVERSE:
-                    if sym in open_positions or sym == "SPY":
-                        continue
-                    rc = rolling_closes[sym]
-                    if len(rc) < max(horizons_map.values()) + 5:
-                        continue
-                    c_now = rc[-1]
-
-                    # Multi-horizon returns
-                    m_rets = {}
-                    valid = True
-                    for h_name, h_bars in horizons_map.items():
-                        ref_p = rc[-1 - h_bars]
-                        if ref_p <= 0:
-                            valid = False
-                            break
-                        m_rets[h_name] = (c_now - ref_p) / ref_p
-
-                    if not valid:
-                        continue
-
-                    s_closes = pd.Series(rc[-40:])
-                    e_trend = float(ema(s_closes, trend_ema_period).iloc[-1])
-
-                    # Gate de momentum positivo
-                    longest_h = list(horizons_map.keys())[-1]
-                    shortest_h = list(horizons_map.keys())[0]
-                    if c_now > e_trend and m_rets[longest_h] > 0.0 and m_rets[shortest_h] > 0.0:
-                        item_dict = {"sym": sym, "price": c_now}
-                        item_dict.update(m_rets)
-                        metrics_list.append(item_dict)
-
-                if metrics_list:
-                    for h_name in horizons_map.keys():
-                        metrics_list.sort(key=lambda x: x[h_name], reverse=True)
-                        for r_i, itm in enumerate(metrics_list, 1):
-                            itm[f"rank_{h_name}"] = r_i
-
-                    for itm in metrics_list:
-                        itm["comp_rank"] = sum(itm[f"rank_{h_name}"] for h_name in horizons_map.keys()) / len(horizons_map)
-
-                    metrics_list.sort(key=lambda x: x["comp_rank"])
-                    available_slots = top_n - len(open_positions)
-                    selected = metrics_list[:available_slots]
-
-                    curr_inv = sum(p["shares"] * float(bar_maps[s][ts]["close"]) for s, p in open_positions.items())
-                    tot_eq = cash + curr_inv
-
-                    for cand in selected:
-                        alloc = min(cash, tot_eq * max_weight_per_asset)
-                        if alloc < 20.0:
-                            break
-
-                        sym = cand["sym"]
-                        raw_p = cand["price"]
-                        entry_price = raw_p * (1.0 + half_spread_bps)
-                        shares = round(alloc / entry_price, 4)
-
-                        if shares <= 0:
-                            continue
-
-                        cost_val = shares * entry_price
-                        spd_loss_entry = raw_p * half_spread_bps * shares
-                        tot_spread += spd_loss_entry
-
-                        cash -= cost_val
-                        open_positions[sym] = {
-                            "symbol": sym,
-                            "raw_entry_price": raw_p,
-                            "entry_price": entry_price,
-                            "entry_cost": cost_val,
-                            "shares": shares,
-                            "stop_loss": entry_price * (1.0 - initial_stop_pct),
-                            "bars_held": 0,
-                        }
-
-        # 3. Equidad
-        curr_inv = sum(p["shares"] * float(bar_maps[s][ts]["close"]) for s, p in open_positions.items())
-        equity_history[cur_dt_str] = cash + curr_inv
-
-    eq_s = pd.Series(equity_history)
-    final_cap = float(eq_s.iloc[-1])
-    tot_ret = ((final_cap - initial_capital) / initial_capital) * 100.0
-
-    n_days = len(set(dt_s[:10] for dt_s in eq_s.index))
-    n_years = n_days / 252.0 if n_days > 0 else 1.0
-    cagr = ((final_cap / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if n_years > 0 else 0.0
-
-    cummax = eq_s.cummax()
-    max_dd = float(abs(((eq_s - cummax) / cummax).min()) * 100.0)
-
-    daily_closes = eq_s.groupby(lambda x: x[:10]).last()
-    daily_rets = daily_closes.pct_change().dropna()
-    mean_d = float(daily_rets.mean())
-    std_d = float(daily_rets.std())
-    sharpe = float((mean_d / std_d) * np.sqrt(252.0)) if std_d > 0 else 0.0
-
-    wins = [t for t in closed_trades if t["net_pnl"] > 0]
-    losses = [t for t in closed_trades if t["net_pnl"] <= 0]
-    win_rate = (len(wins) / len(closed_trades) * 100.0) if closed_trades else 0.0
-    gp = sum(t["net_pnl"] for t in wins)
-    gl = abs(sum(t["net_pnl"] for t in losses))
-    pf = (gp / gl) if gl > 0 else 99.0
-
-    tot_reg = tot_sec + tot_taf + tot_cat
+    tot_reg = sum(float(t.fees) for t in res.trades)
+    tot_spread = sum(float(t.slippage_cost) for t in res.trades)
     tot_fric = tot_reg + tot_spread
+
+    eq_s = res.equity_curve
+    final_cap = float(eq_s.iloc[-1]) if not eq_s.empty else initial_capital
+    daily_rets = eq_s.pct_change().dropna()
 
     return {
         "final_capital": final_cap,
-        "total_return_pct": tot_ret,
-        "cagr_pct": cagr,
-        "sharpe_ratio": sharpe,
-        "max_drawdown_pct": max_dd,
-        "total_trades": len(closed_trades),
-        "win_rate_pct": win_rate,
-        "profit_factor": pf,
+        "total_return_pct": float(res.metrics.total_return_pct),
+        "cagr_pct": float(res.metrics.cagr_pct or 0.0),
+        "sharpe_ratio": float(res.metrics.sharpe_ratio or 0.0),
+        "max_drawdown_pct": float(res.metrics.max_drawdown_pct),
+        "total_trades": len(res.trades),
+        "win_rate_pct": float(res.metrics.win_rate_pct),
+        "profit_factor": float(res.metrics.profit_factor),
         "sec_taf_usd": tot_reg,
         "spread_cost_usd": tot_spread,
         "total_friction_usd": tot_fric,
@@ -422,7 +394,9 @@ def main():
     # PERÍODO 2: BARRAS DE 1 HORA (730 Sesiones, Oct-2023 a Sep-2026, ~3 Años)
     # =========================================================================
     print("--- Ejecutando Período 2: 1 Hora (730 Sesiones / ~3 Años) ---")
+    # Filtrar SPY a ventana de desarrollo horaria permitida
     spy_1h = data_1h["SPY"]
+    spy_1h = spy_1h[(spy_1h["date"] >= "2023-10-23") & (spy_1h["date"] <= "2025-09-21")].reset_index(drop=True)
     spy_1h_cum, spy_1h_cagr, spy_1h_sharpe, spy_1h_dd, spy_1h_daily = compute_benchmark_spy(spy_1h)
 
     # Horizontes adaptados a 1h: 2h, 4h, 7h (1d), 14h (2d), 28h (4d)
@@ -437,6 +411,7 @@ def main():
         max_holding_bars=42,
         trend_ema_period=21,
         flatten_end_of_day=False,  # Permite swing multi-sesión con trailing stop
+        resolution="1h",
     )
 
     common_dt_1h = sim_1h["daily_returns"].index.intersection(spy_1h_daily.index)

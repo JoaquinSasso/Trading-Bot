@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from tbot.regime.filter import MarketRegime
 from tbot.strategies.interfaces import StrategyContext
 from tbot.strategies.s6_intraday_5m_multi_horizon import (
     HORIZON_BARS_MAP,
     Intraday5mMultiHorizonStrategy,
-    IntradayMomentumMetrics,
 )
 
 EASTERN = ZoneInfo("America/New_York")

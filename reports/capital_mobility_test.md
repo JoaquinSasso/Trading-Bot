@@ -20,35 +20,35 @@
 
 ---
 
-## 2. Tabla Comparativa General (Trienio y Muestra Completa)
+## 2. Tabla Comparativa General (Trienio 2020–2022)
 
-| Configuración | Retorno Trienio (2020–22) | Sharpe Trienio | Retorno Muestra (2020–25) | Sharpe Muestra | Max Drawdown | Trades | Días Tenencia Promedio | Liquidaciones CB (2020–25) | Fricción ($) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1. Top-2 (hold=30d, Baseline)** | **-1.15%** | 0.07 | **+145.43%** | **0.66** | 30.06% | 215 | 14.5d | **28** | $264.58 |
-| **2. Top-2 (hold=10d, Rotación rápida)** | **+3.91%** | 0.15 | **+136.69%** | **0.63** | 23.12% | 335 | 9.2d | **32** | $464.62 |
-| **3. Top-2 (Reeval. Semanal, reemplazo si rank > 4)** | **+2.51%** | 0.13 | **+127.68%** | **0.60** | 24.04% | 237 | 13.1d | **31** | $297.90 |
-| **4. Top-4 (hold=30d, Amplitud propuesta)** | **+40.85%** | 0.72 | **+230.97%** | **1.11** | 20.34% | 401 | 15.6d | **9** | $311.18 |
+| Configuración | Retorno Trienio (2020–22) | Sharpe Trienio | Max Drawdown | Trades | Días Tenencia Promedio | Liquidaciones CB | Fricción ($) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1. Top-2 (hold=30d, Baseline)** | **+7.70%** | 0.83 | 3.06% | 67 | 14.4d | **0** | $8.48 |
+| **2. Top-2 (hold=10d, Rotación rápida)** | **+1.98%** | 0.28 | 3.34% | 90 | 8.7d | **0** | $10.84 |
+| **3. Top-2 (Reeval. Semanal, reemplazo si rank > 4)** | **+7.70%** | 0.83 | 3.06% | 67 | 14.4d | **0** | $8.48 |
+| **4. Top-4 (hold=30d, Amplitud propuesta)** | **+13.54%** | 0.88 | 6.20% | 122 | 14.6d | **0** | $15.62 |
 
 ---
 
 ## 3. Desglose Anual de Rendimientos
 
-| Configuración | 2020 | 2021 | 2022 | 2025 |
-| :--- | :---: | :---: | :---: | :---: |
-| **1. Top-2 (hold=30d, Baseline)** | -10.46% | +15.81% | -1.38% | +53.59% |
-| **2. Top-2 (hold=10d, Rotación rápida)** | -13.77% | +30.17% | -7.03% | +23.57% |
-| **3. Top-2 (Reeval. Semanal, reemplazo si rank > 4)** | -11.03% | +18.99% | -8.62% | +37.00% |
-| **4. Top-4 (hold=30d, Amplitud propuesta)** | +22.57% | +20.63% | -1.81% | +32.90% |
+| Configuración | 2020 | 2021 | 2022 |
+| :--- | :---: | :---: | :---: |
+| **1. Top-2 (hold=30d, Baseline)** | +2.75% | +6.00% | -0.48% |
+| **2. Top-2 (hold=10d, Rotación rápida)** | +0.87% | +2.02% | -0.48% |
+| **3. Top-2 (Reeval. Semanal, reemplazo si rank > 4)** | +2.75% | +6.00% | -0.48% |
+| **4. Top-4 (hold=30d, Amplitud propuesta)** | +6.88% | +4.53% | -0.97% |
 
 ---
 
 ## 4. Dictamen Institucional y Conclusión (Resolución F-20)
 
 ### Análisis de Resultados Empíricos:
-1. **Baseline Top-2 (hold=30d):** Retorno **+145.43%**, Sharpe **0.66**, con **28 liquidaciones forzosas** por cortacircuito.
-2. **Top-2 con Rotación Forzada (hold=10d):** Retorno **+136.69%**, Sharpe **0.63**, 335 operaciones. Multiplicar la rotación incrementa el arrastre por fricción a $464.62 y sufre **32 liquidaciones**.
-3. **Top-2 con Reevaluación Semanal (reemplazo rank > 4):** Retorno **+127.68%**, Sharpe **0.60**, con **31 liquidaciones**.
-4. **Top-4 (hold=30d):** Retorno **+230.97%**, Sharpe **1.11**, con solo **9 liquidaciones**.
+1. **Baseline Top-2 (hold=30d):** Retorno **+7.70%**, Sharpe **0.83**, con **0 liquidaciones forzosas** por cortacircuito.
+2. **Top-2 con Rotación Forzada (hold=10d):** Retorno **+1.98%**, Sharpe **0.28**, 90 operaciones. Multiplicar la rotación incrementa el arrastre por fricción a $10.84 y sufre **0 liquidaciones**.
+3. **Top-2 con Reevaluación Semanal (reemplazo rank > 4):** Retorno **+7.70%**, Sharpe **0.83**, con **0 liquidaciones**.
+4. **Top-4 (hold=30d):** Retorno **+13.54%**, Sharpe **0.88**, con solo **0 liquidaciones**.
 
 ### Veredicto F-20:
 - **La Hipótesis B (Amplitud / Diversificación Transversal) QUEDA CONFIRMADA; Hipótesis de Movilidad PURA DESCARTADA:**

@@ -18,7 +18,6 @@ import time
 import urllib.request
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

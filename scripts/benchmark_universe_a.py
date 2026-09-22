@@ -38,8 +38,9 @@ Implementa estrictamente la especificación UNIVERSE_CONSTRUCTION_SPEC.md:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -52,12 +53,10 @@ if str(BACKEND_DIR) not in sys.path:
 if str(PROJECT_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+from tbot.indicators.pure import ema
 from optimize_and_benchmark_portfolio import (
     SimulationResult,
     TradeRecord,
-    compute_drawdown,
-    compute_sharpe,
-    ema,
     load_all_market_data,
 )
 
@@ -256,10 +255,7 @@ def passes_absolute_gate(
         return False
 
     ema50 = ema(closes, 50).iloc[-1]
-    if c_now < ema50:
-        return False
-
-    return True
+    return c_now >= ema50
 
 
 def run_universe_a_simulation(
@@ -273,284 +269,73 @@ def run_universe_a_simulation(
     trailing_ema_period: int = 25,
     max_holding_days: int = 90,
     annual_cash_yield: float = 0.045,
+    integer_shares: bool = False,
+    apply_retail_costs: bool = False,
 ) -> SimulationResult:
-    """Ejecuta la simulación completa del Universo A según UNIVERSE_CONSTRUCTION_SPEC."""
-    spy_df = daily_data["SPY"]
+    """Ejecuta la simulación declarativa de Universo A invocando al motor unificado BacktestEngine."""
+    from tbot.backtest.engine import BacktestConfig, BacktestEngine
 
-    all_dates = sorted(
-        set.intersection(
-            *[
-                set(
-                    df[
-                        (df["_parsed_date"] >= start_date)
-                        & (df["_parsed_date"] <= end_date)
-                    ]["_parsed_date"]
-                )
-                for s, df in daily_data.items()
-                if s in ALL_UNIVERSE_A_SYMBOLS
-            ]
-        )
+    spy_df = daily_data.get("SPY", pd.DataFrame())
+    if not spy_df.empty and "_parsed_date" not in spy_df.columns:
+        spy_df["_parsed_date"] = pd.to_datetime(spy_df["date"]).dt.date
+
+    # SPY return
+    if not spy_df.empty:
+        spy_past_start = spy_df[spy_df["_parsed_date"] >= start_date]
+        spy_past_end = spy_df[spy_df["_parsed_date"] <= end_date]
+        if not spy_past_start.empty and not spy_past_end.empty:
+            spy_start = float(spy_past_start["open"].iloc[0])
+            spy_end = float(spy_past_end["close"].iloc[-1])
+            spy_ret = ((spy_end - spy_start) / spy_start) * 100.0
+        else:
+            spy_ret = 0.0
+    else:
+        spy_ret = 0.0
+
+    config = BacktestConfig(
+        blocks=BLOCK_DEFS,
+        universe=ALL_UNIVERSE_A_SYMBOLS,
+        initial_capital=Decimal(str(initial_capital)),
+        target_portfolio_vol=target_portfolio_vol,
+        min_position_usd=min_position_usd,
+        trailing_ema_period=trailing_ema_period,
+        max_holding_sessions=max_holding_days,
+        annual_cash_yield_fallback=annual_cash_yield,
+        rebalance_cadence="weekly_friday",
+        integer_shares=integer_shares,
+        apply_retail_costs=apply_retail_costs,
+        single_position_cap=0.25,
+        max_open_positions=4,
     )
 
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
-    closed_trades: list[TradeRecord] = []
-    equity_history: dict[date, float] = {}
+    engine = BacktestEngine(config=config, historical_daily=daily_data)
+    result = engine.run(start_date=start_date, end_date=end_date)
 
-    daily_yield_rate = (
-        (1.0 + annual_cash_yield) ** (1.0 / 252.0) - 1.0
-        if annual_cash_yield > 0
-        else 0.0
-    )
-
-    for i, cur_date in enumerate(all_dates):
-        is_friday = (cur_date.weekday() == 4) or (i == len(all_dates) - 1)
-
-        # 1. Gestión diaria de Trailing Stop y Salidas
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["days_held"] += 1
-            bar = daily_data[sym][daily_data[sym]["_parsed_date"] == cur_date].iloc[0]
-            cur_close = float(bar["close"])
-
-            past_bars = daily_data[sym][daily_data[sym]["_parsed_date"] <= cur_date]
-            ema25 = ema(past_bars["close"].astype(float), trailing_ema_period).iloc[-1]
-
-            # Condiciones de salida: stop loss, EMA25 tras 3 días, o max_holding_days (90d)
-            hit_stop = cur_close < pos["stop_loss"]
-            hit_ema = (pos["days_held"] >= 3 and cur_close < ema25)
-            hit_max_hold = (pos["days_held"] >= max_holding_days)
-
-            if hit_stop or hit_ema or hit_max_hold:
-                ex_p = cur_close
-                pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-                pnl_pct = (ex_p - pos["entry_price"]) / pos["entry_price"]
-                r_dist = pos["entry_price"] - pos["initial_stop"]
-                pnl_r = pnl / (r_dist * pos["shares"]) if r_dist > 0 else 0.0
-                cash += ex_p * pos["shares"]
-
-                reason = "trailing_ema25" if hit_ema else ("stop_loss" if hit_stop else "max_holding_90d")
-                closed_trades.append(
-                    TradeRecord(
-                        symbol=sym,
-                        entry_date=pos["entry_date"],
-                        exit_date=cur_date,
-                        entry_price=pos["entry_price"],
-                        exit_price=ex_p,
-                        shares=pos["shares"],
-                        pnl_usd=pnl,
-                        pnl_pct=pnl_pct,
-                        pnl_r=pnl_r,
-                        exit_reason=reason,
-                    )
-                )
-                del open_positions[sym]
-            else:
-                # Subir trailing stop
-                pos["stop_loss"] = max(pos["stop_loss"], ema25 * 0.985)
-
-        # 2. Rebalanceo Semanal (Viernes)
-        if is_friday:
-            # Calcular régimen graduado
-            regime_score = calculate_graduated_regime(daily_data, cur_date)
-
-            # Equidad total hoy
-            total_equity = cash + sum(
-                p["shares"]
-                * float(
-                    daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0]
-                )
-                for s, p in open_positions.items()
-            )
-
-            # Evaluar cada bloque
-            for block_key, b_cfg in BLOCK_DEFS.items():
-                effective_block_cap = b_cfg.capital_cap
-                if b_cfg.modulate_by_regime:
-                    effective_block_cap *= regime_score
-
-                # Si el cap efectivo es 0 (ej. régimen bajista severo), no abrir nuevas posiciones en este bloque
-                if effective_block_cap <= 0.01:
-                    continue
-
-                # Calcular momentum multi-horizonte del bloque
-                avg_ranks = calculate_multi_horizon_momentum(daily_data, b_cfg.tickers, cur_date)
-                if not avg_ranks:
-                    continue
-
-                # Filtrar con Gate Absoluto
-                qualified = {}
-                for sym, r_val in avg_ranks.items():
-                    if passes_absolute_gate(daily_data, sym, cur_date):
-                        qualified[sym] = r_val
-
-                if not qualified:
-                    continue
-
-                # Ordenar por mejor ranking
-                sorted_qualified = sorted(qualified.keys(), key=lambda s: qualified[s])
-
-                # Identificar posiciones abiertas de este bloque
-                block_open = [s for s in open_positions.keys() if s in b_cfg.tickers]
-
-                # Aplicar buffer asimétrico a las posiciones existentes del bloque
-                for s in list(block_open):
-                    # Si el activo cayó por debajo del buffer_rank o ya no califica, cerrar
-                    if s not in qualified or sorted_qualified.index(s) + 1 > b_cfg.buffer_rank:
-                        pos = open_positions[s]
-                        ex_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                        pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-                        pnl_pct = (ex_p - pos["entry_price"]) / pos["entry_price"]
-                        r_dist = pos["entry_price"] - pos["initial_stop"]
-                        pnl_r = pnl / (r_dist * pos["shares"]) if r_dist > 0 else 0.0
-                        cash += ex_p * pos["shares"]
-                        closed_trades.append(
-                            TradeRecord(
-                                symbol=s,
-                                entry_date=pos["entry_date"],
-                                exit_date=cur_date,
-                                entry_price=pos["entry_price"],
-                                exit_price=ex_p,
-                                shares=pos["shares"],
-                                pnl_usd=pnl,
-                                pnl_pct=pnl_pct,
-                                pnl_r=pnl_r,
-                                exit_reason="buffer_rank_exit",
-                            )
-                        )
-                        del open_positions[s]
-                        block_open.remove(s)
-
-                # Cupos disponibles en el bloque
-                available_slots = b_cfg.top_n - len(block_open)
-                if available_slots <= 0:
-                    continue
-
-                # Candidatos para entrar (deben estar en Top N de entrada)
-                entry_candidates = [
-                    s for s in sorted_qualified[:b_cfg.top_n]
-                    if s not in open_positions
-                ][:available_slots]
-
-                if not entry_candidates:
-                    continue
-
-                # Dimensionamiento por Volatilidad Inversa (1/sigma, 60d)
-                vols = {}
-                for s in entry_candidates:
-                    past_closes = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-                    ret_s = past_closes.iloc[-60:].pct_change().dropna()
-                    sig = float(ret_s.std() * np.sqrt(252))
-                    vols[s] = sig if (not np.isnan(sig) and sig > 0.01) else 0.20
-
-                inv_vols = {s: 1.0 / vols[s] for s in entry_candidates}
-                sum_inv = sum(inv_vols.values())
-                norm_weights = {s: inv_vols[s] / sum_inv for s in entry_candidates}
-
-                # Cap de capital disponible para nuevas entradas en este bloque
-                curr_block_val = sum(
-                    open_positions[s]["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    for s in block_open
-                )
-                max_block_capital = total_equity * effective_block_cap
-                available_block_capital = max(0.0, max_block_capital - curr_block_val)
-
-                # Target Volatility scaling
-                avg_vol = sum(norm_weights[s] * vols[s] for s in entry_candidates)
-                vol_scale = min(1.0, target_portfolio_vol / avg_vol) if avg_vol > 0 else 1.0
-
-                for s in entry_candidates:
-                    # Peso respecto al capital disponible del bloque
-                    raw_alloc = available_block_capital * norm_weights[s] * vol_scale
-
-                    # Límite por instrumento
-                    per_inst_cap = b_cfg.per_instrument_cap.get(s, b_cfg.per_instrument_cap.get("default", 0.20))
-                    max_inst_alloc = total_equity * per_inst_cap
-                    alloc = min(raw_alloc, max_inst_alloc, cash)
-
-                    if alloc >= min_position_usd:
-                        cur_close = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                        shares = alloc / cur_close
-                        cash -= shares * cur_close
-
-                        past_closes = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-                        ema25 = ema(past_closes, trailing_ema_period).iloc[-1]
-                        stop_loss = min(cur_close * 0.95, ema25 * 0.985)
-
-                        open_positions[s] = {
-                            "symbol": s,
-                            "entry_date": cur_date,
-                            "entry_price": cur_close,
-                            "shares": shares,
-                            "stop_loss": stop_loss,
-                            "initial_stop": stop_loss,
-                            "take_profit": 999999.0,
-                            "days_held": 0,
-                            "block": block_key,
-                        }
-
-        # 3. Aplicar Cash Yield al remanente en efectivo
-        if daily_yield_rate > 0 and cash > 0:
-            cash *= (1.0 + daily_yield_rate)
-
-        # 4. Registrar equidad total diaria
-        invested_val = sum(
-            p["shares"]
-            * float(
-                daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0]
-            )
-            for s, p in open_positions.items()
+    trade_records = [
+        TradeRecord(
+            symbol=t.symbol,
+            entry_date=t.entry_time.date() if isinstance(t.entry_time, datetime) else t.entry_time,
+            exit_date=t.exit_time.date() if isinstance(t.exit_time, datetime) else t.exit_time,
+            entry_price=float(t.entry_price),
+            exit_price=float(t.exit_price),
+            shares=float(t.qty),
+            pnl_usd=float(t.pnl),
+            pnl_pct=float(t.pnl_pct),
+            pnl_r=float(t.pnl_r),
+            exit_reason=t.exit_reason,
         )
-        total_eq = cash + invested_val
-        equity_history[cur_date] = total_eq
+        for t in result.trades
+    ]
 
-    # Cerrar posiciones al final
-    final_date = all_dates[-1]
-    for sym, pos in list(open_positions.items()):
-        ex_p = float(daily_data[sym][daily_data[sym]["_parsed_date"] == final_date]["close"].iloc[0])
-        pnl = (ex_p - pos["entry_price"]) * pos["shares"]
-        pnl_pct = (ex_p - pos["entry_price"]) / pos["entry_price"]
-        r_dist = pos["entry_price"] - pos["initial_stop"]
-        pnl_r = pnl / (r_dist * pos["shares"]) if r_dist > 0 else 0.0
-        cash += ex_p * pos["shares"]
-        closed_trades.append(
-            TradeRecord(
-                symbol=sym,
-                entry_date=pos["entry_date"],
-                exit_date=final_date,
-                entry_price=pos["entry_price"],
-                exit_price=ex_p,
-                shares=pos["shares"],
-                pnl_usd=pnl,
-                pnl_pct=pnl_pct,
-                pnl_r=pnl_r,
-                exit_reason="end_of_period",
-            )
-        )
-    equity_history[final_date] = cash
-
-    eq_series = pd.Series(equity_history)
-    final_cap = float(eq_series.iloc[-1])
+    final_cap = float(result.equity_curve.iloc[-1]) if not result.equity_curve.empty else initial_capital
     total_ret = ((final_cap - initial_capital) / initial_capital) * 100.0
-
-    spy_start = float(spy_df[spy_df["_parsed_date"] == all_dates[0]]["open"].iloc[0])
-    spy_end = float(spy_df[spy_df["_parsed_date"] == all_dates[-1]]["close"].iloc[0])
-    spy_ret = ((spy_end - spy_start) / spy_start) * 100.0
     alpha = total_ret - spy_ret
 
-    max_dd_pct, _ = compute_drawdown(eq_series)
-    sharpe = compute_sharpe(eq_series)
-
-    wins = [t for t in closed_trades if t.pnl_usd > 0]
-    losses = [t for t in closed_trades if t.pnl_usd <= 0]
-    win_rate = (len(wins) / len(closed_trades) * 100.0) if closed_trades else 0.0
-
-    gross_profit = sum(t.pnl_usd for t in wins)
-    gross_loss = abs(sum(t.pnl_usd for t in losses))
-    pf = (gross_profit / gross_loss) if gross_loss > 0 else 99.0
+    wins = [t for t in trade_records if t.pnl_usd > 0]
+    win_rate = (len(wins) / len(trade_records) * 100.0) if trade_records else 0.0
     avg_days = (
-        float(np.mean([(t.exit_date - t.entry_date).days for t in closed_trades]))
-        if closed_trades
+        float(np.mean([(t.exit_date - t.entry_date).days for t in trade_records]))
+        if trade_records
         else 0.0
     )
 
@@ -560,14 +345,14 @@ def run_universe_a_simulation(
         final_capital=round(final_cap, 2),
         total_return_pct=round(total_ret, 2),
         alpha_vs_spy=round(alpha, 2),
-        sharpe_ratio=round(sharpe, 2),
-        max_drawdown_pct=round(max_dd_pct, 2),
-        total_trades=len(closed_trades),
+        sharpe_ratio=round(float(result.metrics.sharpe_ratio or 0.0), 2),
+        max_drawdown_pct=round(float(result.metrics.max_drawdown_pct), 2),
+        total_trades=len(trade_records),
         win_rate_pct=round(win_rate, 1),
-        profit_factor=round(pf, 2),
+        profit_factor=round(float(result.metrics.profit_factor), 2),
         avg_holding_days=round(avg_days, 1),
-        trades=closed_trades,
-        equity_curve=eq_series,
+        trades=trade_records,
+        equity_curve=result.equity_curve,
     )
 
 
@@ -577,24 +362,22 @@ def main() -> int:
     print("   Cumplimiento de UNIVERSE_CONSTRUCTION_SPEC.md & Requisitos de Auditoría Externa")
     print("=" * 105)
 
-    print("\nCargando datos históricos de Universo A (2018-2026)...")
+    print("\nCargando datos históricos de Universo A (2018-2022 ventana de desarrollo)...")
     daily_data = load_all_market_data(DATA_DIR, symbols=ALL_UNIVERSE_A_SYMBOLS)
     print(f"[OK] Cargados {len(daily_data)} instrumentos.")
 
     periods = [
-        {"name": "2025 (Año Completo)", "start": date(2025, 1, 2), "end": date(2025, 12, 31), "yield": 0.045},
         {"name": "2020 (Crash COVID + Rebote)", "start": date(2020, 1, 2), "end": date(2020, 12, 31), "yield": 0.005},
         {"name": "2021 (Mercado Alcista)", "start": date(2021, 1, 4), "end": date(2021, 12, 31), "yield": 0.005},
         {"name": "2022 (Mercado Bajista Severo)", "start": date(2022, 1, 3), "end": date(2022, 12, 30), "yield": 0.025},
         {"name": "2020-2022 (3 Años Compuesto)", "start": date(2020, 1, 2), "end": date(2022, 12, 30), "yield": 0.015},
-        {"name": "2019-2025 (Ciclo Completo 7 Años)", "start": date(2019, 1, 2), "end": date(2025, 12, 31), "yield": 0.025},
     ]
 
     all_summaries = []
 
     for p in periods:
         p_name = p["name"]
-        print(f"\n" + "-" * 85)
+        print("\n" + "-" * 85)
         print(f" SIMULANDO: {p_name.upper()} ({p['start']} a {p['end']})")
         print("-" * 85)
 

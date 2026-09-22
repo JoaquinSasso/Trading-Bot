@@ -16,16 +16,24 @@ Actualiza: 'reports/capm_alpha_and_costs.md' y genera 'reports/universe_a_granul
 
 from __future__ import annotations
 
-import math
 import sys
-from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+BACKEND_DIR = PROJECT_ROOT / "backend"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 DATA_DIR = PROJECT_ROOT / "data" / "universe_a"
 RF_FILE = PROJECT_ROOT / "data" / "risk_free_rate_bil.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
@@ -34,11 +42,9 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 from benchmark_universe_a import (
     ALL_UNIVERSE_A_SYMBOLS,
     BLOCK_DEFS,
-    calculate_graduated_regime,
-    calculate_multi_horizon_momentum,
-    passes_absolute_gate,
 )
-from optimize_and_benchmark_portfolio import ema, load_all_market_data
+from optimize_and_benchmark_portfolio import load_all_market_data
+from tbot.backtest.engine import BacktestConfig, BacktestEngine
 
 
 def run_universe_a_variant(
@@ -49,209 +55,48 @@ def run_universe_a_variant(
     target_portfolio_vol: float = 0.12,
     min_position_usd: float = 150.0,
     initial_capital: float = 2000.0,
+    start_date: date = date(2020, 1, 2),
+    end_date: date = date(2022, 12, 30),
 ) -> dict[str, Any]:
-    trailing_ema_period = 25
-    max_holding_days = 90
+    """Ejecuta simulación de variante de Universo A invocando al motor unificado BacktestEngine."""
 
-    dates = sorted(
-        set.intersection(
-            *[
-                set(df["_parsed_date"].unique())
-                for sym, df in daily_data.items()
-                if sym in ALL_UNIVERSE_A_SYMBOLS
-            ]
-        )
+    config = BacktestConfig(
+        blocks=BLOCK_DEFS,
+        universe=ALL_UNIVERSE_A_SYMBOLS,
+        initial_capital=Decimal(str(initial_capital)),
+        target_portfolio_vol=target_portfolio_vol,
+        min_position_usd=min_position_usd,
+        trailing_ema_period=25,
+        max_holding_sessions=90,
+        rebalance_cadence="weekly_friday",
+        integer_shares=integer_shares,
+        apply_retail_costs=apply_costs,
+        rf_series=pd.Series(rf_daily_map) if rf_daily_map else None,
+        single_position_cap=0.25,
+        max_open_positions=4,
     )
+    engine = BacktestEngine(config=config, historical_daily=daily_data)
+    result = engine.run(start_date=start_date, end_date=end_date)
 
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
-    equity_history: dict[date, float] = {}
-    total_spread_usd = 0.0
-    total_slippage_usd = 0.0
-    total_trades = 0
+    eq_series = result.equity_curve
+    final_cap = float(eq_series.iloc[-1]) if not eq_series.empty else initial_capital
+    tot_ret = ((final_cap - initial_capital) / initial_capital) * 100.0
+    n_years = max(1.0, len(eq_series) / 252.0)
+    cagr = ((final_cap / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0 if final_cap > 0 else 0.0
 
-    # 3.5 bps one-way para ETFs
-    half_spread = 0.00015
-    slippage = 0.00020
-
-    for cur_date in dates:
-        daily_rf = rf_daily_map.get(cur_date, 0.0)
-        is_friday = cur_date.weekday() == 4
-
-        # 1. Salidas diarias
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["days_held"] += 1
-            bar = daily_data[sym][daily_data[sym]["_parsed_date"] == cur_date].iloc[0]
-            cur_close = float(bar["close"])
-
-            past_bars = daily_data[sym][daily_data[sym]["_parsed_date"] <= cur_date]
-            ema25 = ema(past_bars["close"].astype(float), trailing_ema_period).iloc[-1]
-
-            hit_stop = cur_close < pos["stop_loss"]
-            hit_ema = (pos["days_held"] >= 3 and cur_close < ema25)
-            hit_max_hold = (pos["days_held"] >= max_holding_days)
-
-            if hit_stop or hit_ema or hit_max_hold:
-                if apply_costs:
-                    ex_p = cur_close * (1.0 - half_spread - slippage)
-                    fric = cur_close * (half_spread + slippage) * pos["shares"]
-                    total_spread_usd += cur_close * half_spread * pos["shares"]
-                    total_slippage_usd += cur_close * slippage * pos["shares"]
-                else:
-                    ex_p = cur_close
-
-                cash += ex_p * pos["shares"]
-                total_trades += 1
-                del open_positions[sym]
-            else:
-                pos["stop_loss"] = max(pos["stop_loss"], ema25 * 0.985)
-
-        # 2. Rebalanceo Semanal
-        if is_friday:
-            regime_score = calculate_graduated_regime(daily_data, cur_date)
-            total_equity = cash + sum(
-                p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                for s, p in open_positions.items()
-            )
-
-            for block_key, b_cfg in BLOCK_DEFS.items():
-                effective_block_cap = b_cfg.capital_cap
-                if b_cfg.modulate_by_regime:
-                    effective_block_cap *= regime_score
-
-                if effective_block_cap <= 0.01:
-                    continue
-
-                avg_ranks = calculate_multi_horizon_momentum(daily_data, b_cfg.tickers, cur_date)
-                qualified = {}
-                for sym, r_val in avg_ranks.items():
-                    if passes_absolute_gate(daily_data, sym, cur_date):
-                        qualified[sym] = r_val
-
-                if not qualified:
-                    continue
-
-                sorted_qualified = sorted(qualified.keys(), key=lambda s: qualified[s])
-                block_open = [s for s in open_positions.keys() if s in b_cfg.tickers]
-
-                for s in list(block_open):
-                    if s not in qualified or sorted_qualified.index(s) + 1 > b_cfg.buffer_rank:
-                        c_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                        if apply_costs:
-                            ex_p = c_p * (1.0 - half_spread - slippage)
-                            total_spread_usd += c_p * half_spread * open_positions[s]["shares"]
-                            total_slippage_usd += c_p * slippage * open_positions[s]["shares"]
-                        else:
-                            ex_p = c_p
-                        cash += ex_p * open_positions[s]["shares"]
-                        total_trades += 1
-                        del open_positions[s]
-                        block_open.remove(s)
-
-                available_slots = b_cfg.top_n - len(block_open)
-                entry_candidates = [
-                    s for s in sorted_qualified[:b_cfg.top_n]
-                    if s not in open_positions
-                ][:available_slots]
-
-                if not entry_candidates:
-                    continue
-
-                vols = {}
-                for s in entry_candidates:
-                    past_closes = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-                    ret_s = past_closes.iloc[-60:].pct_change().dropna()
-                    sig = float(ret_s.std() * np.sqrt(252))
-                    vols[s] = sig if (not np.isnan(sig) and sig > 0.01) else 0.20
-
-                inv_vols = {s: 1.0 / vols[s] for s in entry_candidates}
-                sum_inv = sum(inv_vols.values())
-                norm_w = {s: inv_vols[s] / sum_inv for s in entry_candidates}
-
-                curr_block_val = sum(
-                    open_positions[s]["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    for s in block_open
-                )
-                max_block_capital = total_equity * effective_block_cap
-                avail_block_capital = max(0.0, max_block_capital - curr_block_val)
-
-                avg_v = sum(norm_w[s] * vols[s] for s in entry_candidates)
-                vol_scale = min(1.0, target_portfolio_vol / avg_v) if avg_v > 0 else 1.0
-
-                for s in entry_candidates:
-                    target_alloc = avail_block_capital * norm_w[s] * vol_scale
-                    if target_alloc < min_position_usd:
-                        continue
-
-                    alloc = min(cash, target_alloc)
-                    if alloc < 25.0:
-                        break
-
-                    raw_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    if apply_costs:
-                        entry_p = raw_p * (1.0 + half_spread + slippage)
-                    else:
-                        entry_p = raw_p
-
-                    if integer_shares:
-                        shares = math.floor(alloc / entry_p)
-                    else:
-                        shares = alloc / entry_p
-
-                    if shares <= 0:
-                        continue
-
-                    cost_val = shares * entry_p
-                    if apply_costs:
-                        total_spread_usd += raw_p * half_spread * shares
-                        total_slippage_usd += raw_p * slippage * shares
-
-                    cash -= cost_val
-                    total_trades += 1
-                    open_positions[s] = {
-                        "entry_date": cur_date,
-                        "entry_price": entry_p,
-                        "shares": shares,
-                        "stop_loss": entry_p * 0.95,
-                        "days_held": 0,
-                    }
-
-        # 3. Efectivo gana BIL
-        if daily_rf > 0 and cash > 0:
-            cash *= (1.0 + daily_rf)
-
-        # 4. Equity al cierre
-        invested = sum(
-            p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-            for s, p in open_positions.items()
-        )
-        current_eq = cash + invested
-        equity_history[cur_date] = current_eq
-
-    eq_series = pd.Series(equity_history)
-    tot_ret = ((eq_series.iloc[-1] - initial_capital) / initial_capital) * 100.0
-    n_years = len(eq_series) / 252.0
-    cagr = ((eq_series.iloc[-1] / initial_capital) ** (1.0 / n_years) - 1.0) * 100.0
-
-    cummax = eq_series.cummax()
-    max_dd = float(abs(((eq_series - cummax) / cummax).min()) * 100.0)
-
-    daily_rets = eq_series.pct_change().dropna()
-    excess_rets = pd.Series([daily_rets[d] - rf_daily_map.get(d, 0.0) for d in daily_rets.index], index=daily_rets.index)
-    std_excess = float(excess_rets.std())
-    sharpe = float((excess_rets.mean() / std_excess) * np.sqrt(252.0)) if std_excess > 0 else 0.0
+    total_fees = float(result.metrics.total_fees_paid)
+    total_slip = float(result.metrics.total_slippage_cost)
 
     return {
-        "final_capital": eq_series.iloc[-1],
+        "final_capital": final_cap,
         "total_return_pct": tot_ret,
         "cagr_pct": cagr,
-        "max_drawdown_pct": max_dd,
-        "sharpe_ratio": sharpe,
-        "total_trades": total_trades,
-        "spread_usd": total_spread_usd,
-        "slippage_usd": total_slippage_usd,
-        "total_friction_usd": total_spread_usd + total_slippage_usd,
+        "max_drawdown_pct": float(result.metrics.max_drawdown_pct),
+        "sharpe_ratio": float(result.metrics.sharpe_ratio or 0.0),
+        "total_trades": len(result.trades),
+        "spread_usd": total_fees,
+        "slippage_usd": total_slip,
+        "total_friction_usd": total_fees + total_slip,
         "equity_series": eq_series,
     }
 
@@ -292,7 +137,7 @@ def main() -> int:
     annual_friction_pct = friction_drag / n_years
 
     print("\n" + "=" * 80)
-    print("             RESULTADOS DE LA MEDICIÓN EMPÍRICA (2018–2026, 7.6 AÑOS)")
+    print("             RESULTADOS DE LA MEDICIÓN EMPÍRICA (2020–2022)")
     print("=" * 80)
     print(f"Retorno Fraccionarios Ideales (Sin Costos): {total_ret_ideal:+7.2f}% (CAGR: {cagr_ideal:4.2f}%)")
     print(f"Retorno Fraccionarios (Con Costos)        : {total_ret_frac:+7.2f}%")
@@ -322,7 +167,7 @@ def main() -> int:
         f.write("| **Tamaño de Cuenta Evaluado** | $2.000 USD reales |\n\n---\n\n")
 
         f.write("## 1. Tabla Comparativa de Rendimiento y Descomposición del Arrastre\n\n")
-        f.write("| Modalidad de Simulación | Retorno Acumulado (7.6 Años) | CAGR Anual | Sharpe Real | Max Drawdown | Trades | Costo Fricción ($) |\n")
+        f.write("| Modalidad de Simulación | Retorno Acumulado (Trienio 2020–2022) | CAGR Anual | Sharpe Real | Max Drawdown | Trades | Costo Fricción ($) |\n")
         f.write("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n")
         f.write(f"| **1. Fraccionarios Ideales (Sin Costos)** | **+{total_ret_ideal:.2f}%** | **{cagr_ideal:.2f}%** | {res_ideal['sharpe_ratio']:.2f} | {res_ideal['max_drawdown_pct']:.2f}% | {res_ideal['total_trades']} | $0.00 |\n")
         f.write(f"| **2. Fraccionarios con Costos (3.5 bps)** | **+{total_ret_frac:.2f}%** | {res_frac_costs['cagr_pct']:.2f}% | {res_frac_costs['sharpe_ratio']:.2f} | {res_frac_costs['max_drawdown_pct']:.2f}% | {res_frac_costs['total_trades']} | ${res_frac_costs['total_friction_usd']:.2f} |\n")

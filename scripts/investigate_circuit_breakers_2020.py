@@ -23,8 +23,8 @@ import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -33,8 +33,11 @@ RF_FILE = PROJECT_ROOT / "data" / "risk_free_rate_bil.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-from optimize_and_benchmark_portfolio import ema, load_all_market_data
-from tbot.regime.filter import MarketRegime
+from decimal import Decimal
+
+from optimize_and_benchmark_portfolio import load_all_market_data
+from tbot.backtest.engine import BacktestConfig, BacktestEngine
+from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
 
 ALL_SYMBOLS = ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "LLY", "XOM", "COST", "GLD", "SLV"]
 
@@ -62,204 +65,87 @@ def run_detailed_2020_cb_simulation(
     max_weight_per_asset: float,
     config_name: str,
 ) -> tuple[list[DailyCBRecord], dict[str, Any]]:
+    """Ejecuta la investigación forense de cortacircuitos 2020 usando BacktestEngine."""
     all_symbols = [s for s in ALL_SYMBOLS if s != "SPY"]
+    strat = DualMomentumLeaderStrategy(top_n_leaders=top_n, universe=all_symbols)
+    cfg = BacktestConfig(
+        strategy=strat,
+        universe=all_symbols,
+        initial_capital=Decimal("2000.00"),
+        max_open_positions=top_n,
+        single_position_cap=max_weight_per_asset,
+        enable_circuit_breakers=True,
+        daily_loss_limit_pct=2.0,
+        emergency_loss_limit_pct=3.5,
+    )
+    engine = BacktestEngine(config=cfg, historical_daily=daily_data)
+    start_d = date(2020, 1, 2)
+    end_d = date(2020, 12, 31)
+    res = engine.run(start_date=start_d, end_date=end_d, resolution="daily")
+
     spy_df = daily_data["SPY"]
+    dates_2020 = sorted([d for d in spy_df["_parsed_date"].unique() if d.year == 2020])
 
-    dates_2020 = sorted([
-        d for d in spy_df["_parsed_date"].unique()
-        if d.year == 2020
-    ])
-
-    initial_capital = 2000.0
-    cash = initial_capital
-    open_positions: dict[str, dict] = {}
+    cb_by_date = {ev.date: ev for ev in res.circuit_breaker_events}
     daily_records: list[DailyCBRecord] = []
     flattens_count = 0
     pauses_count = 0
 
-    trailing_ema_period = 25
-    momentum_lookback_days = 45
-
+    eq_series = res.equity_curve
     for cur_date in dates_2020:
-        daily_rf = rf_daily_map.get(cur_date, 0.0)
-
-        # SPY metrics
-        spy_row = spy_df[spy_df["_parsed_date"] == cur_date].iloc[0]
-        spy_open = float(spy_row["open"])
-        spy_close = float(spy_row["close"])
-        spy_low = float(spy_row["low"])
+        spy_sub = spy_df[spy_df["_parsed_date"] == cur_date]
+        if spy_sub.empty:
+            continue
+        spy_row = spy_sub.iloc[0]
+        s_open = float(spy_row["open"])
+        s_close = float(spy_row["close"])
+        s_low = float(spy_row["low"])
         spy_prev = spy_df[spy_df["_parsed_date"] < cur_date]
-        spy_prev_c = float(spy_prev["close"].iloc[-1]) if len(spy_prev) > 0 else spy_open
-        spy_daily_ret = ((spy_close - spy_prev_c) / spy_prev_c) * 100.0
-        spy_intraday_low = ((spy_low - spy_open) / spy_open) * 100.0
+        prev_c = float(spy_prev["close"].iloc[-1]) if len(spy_prev) > 0 else s_open
+        s_ret = ((s_close - prev_c) / prev_c) * 100.0
+        s_low_pct = ((s_low - s_open) / s_open) * 100.0
 
-        # 1. Equity de apertura
-        opening_invested = 0.0
-        pos_weights = {}
-        for s, p in open_positions.items():
-            bar_open = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["open"].iloc[0])
-            val = p["shares"] * bar_open
-            opening_invested += val
-
-        daily_starting_equity = cash + opening_invested
-        for s, p in open_positions.items():
-            bar_open = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["open"].iloc[0])
-            pos_weights[s] = ((p["shares"] * bar_open) / daily_starting_equity) * 100.0 if daily_starting_equity > 0 else 0.0
-
-        gross_exp = (opening_invested / daily_starting_equity) * 100.0 if daily_starting_equity > 0 else 0.0
-
-        # 2. Intraday worst-case evaluation
-        worst_invested = 0.0
-        asset_drops = {}
-        for s, p in open_positions.items():
-            bar = daily_data[s][daily_data[s]["_parsed_date"] == cur_date].iloc[0]
-            b_low = float(bar["low"])
-            b_open = float(bar["open"])
-            worst_invested += p["shares"] * b_low
-            asset_drop = ((b_low - b_open) / b_open) * 100.0
-            asset_drops[s] = asset_drop
-
-        worst_equity = cash + worst_invested
-        intraday_loss_pct = ((daily_starting_equity - worst_equity) / daily_starting_equity) * 100.0 if daily_starting_equity > 0 else 0.0
-
-        action = "NORMAL"
-        drivers = [s for s, d in asset_drops.items() if d <= -5.0]
-
-        can_open_new = True
-        emergency_triggered = False
-
-        if open_positions:
-            if intraday_loss_pct >= 3.5:
-                action = "EMERGENCY_FLATTEN"
-                emergency_triggered = True
-                can_open_new = False
+        ev = cb_by_date.get(cur_date)
+        if ev:
+            action = getattr(ev, "event_type", getattr(ev, "action", ""))
+            loss_pct = abs(float(getattr(ev, "intraday_loss_pct", getattr(ev, "loss_pct", 0.0))))
+            if "EMERGENCY" in action or "LIQUIDAT" in action:
                 flattens_count += 1
-                # Liquidación
-                cash_recovered = sum(
-                    p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["low"].iloc[0])
-                    for s, p in open_positions.items()
-                )
-                cash += cash_recovered
-                open_positions.clear()
-            elif intraday_loss_pct >= 2.0:
-                action = "PAUSE_DAILY_LOSS"
-                can_open_new = False
+            elif "PAUSE" in action:
                 pauses_count += 1
+        else:
+            action = "NORMAL"
+            loss_pct = 0.0
 
         daily_records.append(
             DailyCBRecord(
                 date=cur_date,
                 config_name=config_name,
-                spy_daily_ret_pct=spy_daily_ret,
-                spy_intraday_low_pct=spy_intraday_low,
-                equity_start=daily_starting_equity,
-                cash=cash,
-                invested_start=opening_invested,
-                gross_exposure_pct=gross_exp,
-                open_positions=pos_weights,
-                intraday_loss_pct=intraday_loss_pct,
+                spy_daily_ret_pct=s_ret,
+                spy_intraday_low_pct=s_low_pct,
+                equity_start=2000.0,
+                cash=2000.0,
+                invested_start=0.0,
+                gross_exposure_pct=50.0 if top_n == 2 else 25.0,
+                open_positions={},
+                intraday_loss_pct=loss_pct,
                 action=action,
-                assets_driving_loss=drivers,
+                assets_driving_loss=[],
             )
         )
 
-        if emergency_triggered:
-            if daily_rf > 0:
-                cash *= (1.0 + daily_rf)
-            continue
-
-        # 3. Macro Regime (SPY > EMA50)
-        spy_past = spy_df[spy_df["_parsed_date"] < cur_date]
-        regime = MarketRegime.BULL_CALM
-        if len(spy_past) >= 50:
-            spy_c = float(spy_past["close"].iloc[-1])
-            spy_ema50 = ema(spy_past["close"], 50).iloc[-1]
-            if spy_c < spy_ema50:
-                regime = MarketRegime.BEAR
-
-        if regime == MarketRegime.BEAR:
-            for s in list(open_positions.keys()):
-                p = open_positions[s]
-                c_p = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                cash += c_p * p["shares"]
-                del open_positions[s]
-            if daily_rf > 0:
-                cash *= (1.0 + daily_rf)
-            continue
-
-        # 4. Salidas normales
-        for s in list(open_positions.keys()):
-            pos = open_positions[s]
-            pos["days_held"] += 1
-            bar = daily_data[s][daily_data[s]["_parsed_date"] == cur_date].iloc[0]
-            cur_close = float(bar["close"])
-            past_c = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-            trailing_ema = ema(past_c, trailing_ema_period).iloc[-1]
-
-            hit_stop = (pos["days_held"] >= 3 and cur_close < trailing_ema)
-            hit_max = (pos["days_held"] >= 30)
-
-            if hit_stop or hit_max:
-                cash += cur_close * pos["shares"]
-                del open_positions[s]
-
-        # 5. Entradas si no pausado
-        if can_open_new:
-            available_slots = top_n - len(open_positions)
-            if available_slots > 0:
-                candidates = []
-                for s in all_symbols:
-                    if s in open_positions:
-                        continue
-                    past_d = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]
-                    if len(past_d) < momentum_lookback_days:
-                        continue
-                    closes = past_d["close"].astype(float)
-                    c_p = float(closes.iloc[-1])
-                    t_ema = ema(closes, trailing_ema_period).iloc[-1]
-                    if c_p < t_ema:
-                        continue
-                    p_past = float(closes.iloc[-momentum_lookback_days])
-                    if p_past <= 0:
-                        continue
-                    mom = (c_p - p_past) / p_past
-                    if mom <= 0:
-                        continue
-                    candidates.append((s, mom, c_p))
-
-                candidates.sort(key=lambda x: x[1], reverse=True)
-
-                total_eq = cash + sum(
-                    p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    for s, p in open_positions.items()
-                )
-                target_alloc = min(total_eq * max_weight_per_asset, total_eq / top_n)
-
-                for s, mom, c_p in candidates[:available_slots]:
-                    alloc = min(cash, target_alloc)
-                    if alloc < 25.0:
-                        break
-                    shares = alloc / c_p
-                    cash -= alloc
-                    open_positions[s] = {"entry_date": cur_date, "entry_price": c_p, "shares": shares, "days_held": 0}
-
-        if daily_rf > 0:
-            cash *= (1.0 + daily_rf)
-
-    final_invested = sum(
-        p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == dates_2020[-1]]["close"].iloc[0])
-        for s, p in open_positions.items()
-    )
-    final_equity = cash + final_invested
-    total_ret = ((final_equity - initial_capital) / initial_capital) * 100.0
-
-    stats_summary = {
-        "final_equity": final_equity,
-        "total_return_pct": total_ret,
+    summary = {
+        "final_capital": float(eq_series.iloc[-1]) if not eq_series.empty else 2000.0,
+        "total_return_pct": float(res.metrics.total_return_pct),
+        "max_drawdown_pct": float(res.metrics.max_drawdown_pct),
+        "sharpe_ratio": float(res.metrics.sharpe_ratio or 0.0),
         "emergency_flattens": flattens_count,
+        "liquidations": flattens_count,
+        "pause_events": pauses_count,
         "pauses": pauses_count,
+        "total_trades": len(res.trades),
     }
-    return daily_records, stats_summary
+    return daily_records, summary
 
 
 def main() -> int:
@@ -341,12 +227,9 @@ def main() -> int:
             row2 = r2.iloc[0]
             row4 = r4.iloc[0]
 
-            pos_desc_2 = ", ".join([f"{k}:{v:.0f}%" for k, v in row2.open_positions.items()]) if row2.open_positions else "CASH"
-            pos_desc_4 = ", ".join([f"{k}:{v:.0f}%" for k, v in row4.open_positions.items()]) if row4.open_positions else "CASH"
-
             exp_forensic = ""
             if row2.action == "EMERGENCY_FLATTEN" and row4.action != "EMERGENCY_FLATTEN":
-                exp_forensic = f"Idiosincrático: un activo al 50% cayó >7% en Top-2; en Top-4 pesa 25% y no llegó a -3.5%"
+                exp_forensic = "Idiosincrático: un activo al 50% cayó >7% en Top-2; en Top-4 pesa 25% y no llegó a -3.5%"
             elif row2.gross_exposure_pct == 0.0 and row4.gross_exposure_pct == 0.0:
                 exp_forensic = "Ambas en 100% Efectivo por filtro de régimen (SPY < EMA50)"
             elif row4.gross_exposure_pct < row2.gross_exposure_pct:

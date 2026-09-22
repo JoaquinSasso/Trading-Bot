@@ -11,54 +11,53 @@
 
 ## 1. Tabla Comparativa: Rendimiento y Riesgo con Cortacircuitos Activos
 
-| Configuración | 2020 | 2021 | 2022 | 2025 | Trienio 2020–22 | Sharpe Institucional | Max Drawdown |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1. Top-2 (Sin Cortacircuitos)** | +18.68% | +9.50% | -1.81% | +78.84% | **+32.49%** | 0.49 | 31.85% |
-| **2. Top-2 (Cortacircuitos Fijos -2% / -3.5%)** | -8.92% | +21.89% | -2.01% | +68.87% | **+8.59%** | 0.21 | 23.52% |
-| **3. Top-4 (Sin Cortacircuitos)** | +36.55% | +25.95% | -5.31% | +58.37% | **+66.35%** | 0.98 | 16.27% |
-| **4. Top-4 (Cortacircuitos Fijos -2% / -3.5%)** | +25.99% | +31.77% | -6.00% | +58.60% | **+59.08%** | 0.89 | 14.99% |
-| **5. Top-4 (Cortacircuitos Adaptativos 3sigma / 4sigma)** | +34.77% | +32.40% | -6.00% | +57.79% | **+63.02%** | 0.94 | 16.61% |
+| Configuración | 2020 | 2021 | 2022 | Trienio 2020–22 | Sharpe Institucional | Max Drawdown |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1. Top-2 (Sin Cortacircuitos)** | +2.75% | +6.51% | -0.48% | **+8.07%** | 0.60 | 3.85% |
+| **2. Top-2 (Cortacircuitos Fijos -2% / -3.5%)** | +3.11% | +6.21% | -0.72% | **+8.24%** | 0.63 | 3.87% |
+| **3. Top-4 (Sin Cortacircuitos)** | +6.91% | +5.43% | -1.13% | **+13.87%** | 0.69 | 8.03% |
+| **4. Top-4 (Cortacircuitos Fijos -2% / -3.5%)** | +8.99% | +6.26% | -1.54% | **+15.50%** | 0.81 | 6.28% |
 
 ---
 
 ## 2. Registro Detallado de Activaciones de Cortacircuitos
 
-Se registraron **70 liquidaciones de emergencia** y **284 pausas suaves** en total.
+Se registraron **0 liquidaciones de emergencia** y **0 pausas suaves** en total.
 
 | Fecha | Configuración | Evento | Caída Intradiaria | Umbral | Posiciones Afectadas |
 | :---: | :--- | :---: | :---: | :---: | :--- |
-| 2020-01-31 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-3.15%** | -2.0% | AAPL, LLY |
-| 2020-02-25 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.93%** | -3.5% | N/A |
-| 2020-04-21 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-4.14%** | -3.5% | N/A |
-| 2020-04-28 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.74%** | -2.0% | AMZN, LLY |
-| 2020-05-01 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.40%** | -2.0% | AMZN, LLY |
-| 2020-05-07 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.17%** | -2.0% | AMZN, LLY |
-| 2020-05-21 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.89%** | -2.0% | NVDA, AMZN |
-| 2020-05-26 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.59%** | -3.5% | N/A |
-| 2020-06-11 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-3.40%** | -2.0% | META, NVDA |
-| 2020-06-12 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.73%** | -3.5% | N/A |
-| 2020-06-16 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.96%** | -2.0% | NVDA, META |
-| 2020-06-24 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.52%** | -3.5% | N/A |
-| 2020-06-26 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.54%** | -3.5% | N/A |
-| 2020-07-13 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.76%** | -3.5% | N/A |
-| 2020-07-15 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-3.46%** | -2.0% | NVDA, AMZN |
-| 2020-07-21 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-3.05%** | -2.0% | NVDA, AMZN |
-| 2020-07-23 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-4.07%** | -3.5% | N/A |
-| 2020-07-29 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.75%** | -2.0% | SLV, AMZN |
-| 2020-08-07 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.83%** | -2.0% | SLV, AMZN |
-| 2020-08-11 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-5.20%** | -3.5% | N/A |
-| 2020-08-14 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-3.07%** | -2.0% | SLV, AAPL |
-| 2020-08-18 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.52%** | -2.0% | SLV, AAPL |
-| 2020-08-19 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.64%** | -2.0% | SLV, AAPL |
-| 2020-08-24 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.99%** | -2.0% | SLV, AAPL |
-| 2020-08-27 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.63%** | -3.5% | N/A |
-| 2020-09-01 | 2. Top-2 | `PAUSE_DAILY_LOSS` | **-2.16%** | -2.0% | SLV, NVDA |
-| 2020-09-02 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-3.84%** | -3.5% | N/A |
-| 2020-09-04 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-4.95%** | -3.5% | N/A |
-| 2020-09-10 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-4.51%** | -3.5% | N/A |
-| 2020-09-21 | 2. Top-2 | `EMERGENCY_FLATTEN` | **-5.26%** | -3.5% | N/A |
+| 2020-09-23 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.39%** | -2.0% | N/A |
+| 2020-09-24 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.05%** | -2.0% | N/A |
+| 2020-09-28 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.23%** | -2.0% | N/A |
+| 2020-09-29 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.00%** | -2.0% | N/A |
+| 2020-09-30 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.01%** | -2.0% | N/A |
+| 2020-10-01 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.23%** | -2.0% | N/A |
+| 2020-10-02 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.13%** | -2.0% | N/A |
+| 2020-10-05 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.01%** | -2.0% | N/A |
+| 2020-10-06 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.13%** | -2.0% | N/A |
+| 2020-10-07 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.10%** | -2.0% | N/A |
+| 2020-10-08 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.24%** | -2.0% | N/A |
+| 2020-10-09 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.08%** | -2.0% | N/A |
+| 2020-10-12 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.06%** | -2.0% | N/A |
+| 2020-10-13 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.21%** | -2.0% | N/A |
+| 2020-10-14 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.25%** | -2.0% | N/A |
+| 2020-10-15 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.03%** | -2.0% | N/A |
+| 2020-10-16 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.19%** | -2.0% | N/A |
+| 2020-10-19 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.38%** | -2.0% | N/A |
+| 2020-10-20 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.06%** | -2.0% | N/A |
+| 2020-10-21 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.11%** | -2.0% | N/A |
+| 2020-10-22 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.22%** | -2.0% | N/A |
+| 2021-03-26 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.12%** | -2.0% | N/A |
+| 2021-03-29 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.07%** | -2.0% | N/A |
+| 2021-03-30 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.04%** | -2.0% | N/A |
+| 2021-03-31 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.08%** | -2.0% | N/A |
+| 2021-04-01 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.02%** | -2.0% | N/A |
+| 2021-04-05 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.12%** | -2.0% | N/A |
+| 2021-04-06 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.06%** | -2.0% | N/A |
+| 2021-04-07 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.03%** | -2.0% | N/A |
+| 2021-04-08 | 2. Top-2 | `PAUSED_DAILY_LOSS` | **-0.11%** | -2.0% | N/A |
 
-*... y 324 eventos adicionales registrados.* 
+*... y 269 eventos adicionales registrados.* 
 
 ---
 

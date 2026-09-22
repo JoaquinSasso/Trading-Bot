@@ -25,17 +25,22 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 import statsmodels.api as sm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = PROJECT_ROOT / "backend"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
 DATA_14_DIR = PROJECT_ROOT / "data" / "historical_14"
 RF_FILE = PROJECT_ROOT / "data" / "risk_free_rate_bil.csv"
 MTUM_FILE = PROJECT_ROOT / "data" / "MTUM_daily.csv"
 KF_FILE = PROJECT_ROOT / "data" / "F-F_Momentum_Factor_daily.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
-
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from optimize_and_benchmark_portfolio import load_all_market_data
 from run_phase2_institutional_metrics import run_s5_full_institution
 
@@ -154,12 +159,10 @@ def main() -> int:
     ]
 
     periods = [
-        ("Muestra Completa 2020–2025", date(2020, 1, 2), date(2025, 12, 31)),
-        ("Trienio 2020–2022", date(2020, 1, 2), date(2022, 12, 30)),
+        ("Muestra Desarrollo 2020–2022", date(2020, 1, 2), date(2022, 12, 30)),
         ("2020", date(2020, 1, 2), date(2020, 12, 31)),
         ("2021", date(2021, 1, 4), date(2021, 12, 31)),
         ("2022", date(2022, 1, 3), date(2022, 12, 30)),
-        ("2025", date(2025, 1, 2), date(2025, 12, 31)),
     ]
 
     results_table = []
@@ -182,6 +185,7 @@ def main() -> int:
             )
 
             strat_rets = sim.equity_series.pct_change().dropna()
+            strat_rets.index = [d.date() if hasattr(d, "date") else d for d in strat_rets.index]
             common_dates = sorted(
                 set(strat_rets.index)
                 .intersection(set(spy_rets.keys()))
@@ -191,6 +195,7 @@ def main() -> int:
             )
 
             if len(common_dates) < 30:
+                print(f"    [WARN] Menos de 30 fechas comunes ({len(common_dates)}) para {cfg_name} [{p_name}]")
                 continue
 
             y_excess = np.array([strat_rets[d] - rf_map.get(d, 0.0) for d in common_dates])
@@ -227,8 +232,8 @@ def main() -> int:
             }
             results_table.append(rec)
 
-            if p_name == "Muestra Completa 2020–2025":
-                print(f"  [{cfg_name} - Muestra Completa 2020-2025]:")
+            if p_name == "Muestra Desarrollo 2020–2022":
+                print(f"  [{cfg_name} - Muestra Desarrollo 2020-2022]:")
                 print(f"    - Modelo 1F (CAPM)      : Alpha = {m1['alpha_annual_pct']:+6.2f}% ± {m1['alpha_se_annual_pct']:4.2f}% (t={m1['alpha_t']:+4.2f}, p={m1['alpha_p']:.3f}) | R2 = {m1['r2']:.2f}")
                 print(f"    - Modelo 2F (SPY+GLD)   : Alpha = {m2['alpha_annual_pct']:+6.2f}% ± {m2['alpha_se_annual_pct']:4.2f}% (t={m2['alpha_t']:+4.2f}, p={m2['alpha_p']:.3f}) | R2 = {m2['r2']:.2f}")
                 print(f"    - Modelo 3F (SPY+GLD+MTUM): Alpha = {m3_mtum['alpha_annual_pct']:+6.2f}% ± {m3_mtum['alpha_se_annual_pct']:4.2f}% (t={m3_mtum['alpha_t']:+4.2f}, p={m3_mtum['alpha_p']:.3f}) | R2 = {m3_mtum['r2']:.2f}")
@@ -249,12 +254,12 @@ def main() -> int:
         f.write("## 1. Motivación y Predicción del Auditor (F-22)\n\n")
         f.write("> *'La regresión de un solo factor contra SPY, aplicada a una cartera que puede tener hasta el 50% en GLD y SLV, atribuye al intercepto todo el retorno de los metales... β = 0.31 y R² = 0.15... Predicción registrada antes del test: la mayor parte del alpha se traslada a cargas sobre el factor oro y el factor momentum, y el intercepto queda cerca de cero sin significancia.'*\n\n---\n\n")
 
-        f.write("## 2. Tabla Comparativa de Modelos Factoriales (Muestra Completa 2020–2025)\n\n")
+        f.write("## 2. Tabla Comparativa de Modelos Factoriales (Muestra Desarrollo 2020–2022)\n\n")
         f.write("| Configuración | Modelo | Alpha Anualizado (α) | Error Estándar (SE) | t-stat | p-value | β_SPY | β_GLD | β_MOM | R² | R² Aj. |\n")
         f.write("| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n")
 
         for r in results_table:
-            if r["period"] == "Muestra Completa 2020–2025":
+            if r["period"] == "Muestra Desarrollo 2020–2022":
                 cfg = r["config"]
                 # 1F
                 m1 = r["m1"]
@@ -296,13 +301,18 @@ def main() -> int:
         f.write("Criterio del auditor: *'Si el R² sube sustancialmente y el α pierde significancia, el retorno del sistema es exposición factorial y no habilidad.'*\n\n")
         
         # Extraer Top-4 Adaptativo full sample
-        t4_full = [r for r in results_table if r["config"] == "Top-4 (25% cap, CB Adaptativo)" and r["period"] == "Muestra Completa 2020–2025"][0]
+        t4_full = next(
+            r
+            for r in results_table
+            if r["config"] == "Top-4 (25% cap, CB Adaptativo)"
+            and r["period"] == "Muestra Desarrollo 2020–2022"
+        )
         m1_t4 = t4_full["m1"]
         m3_t4 = t4_full["m3_mtum"]
         
         f.write(f"- **Evolución del R²:** Pasa de **{m1_t4['r2']:.2f}** (1 factor SPY) a **{m3_t4['r2']:.2f}** en el modelo 3 factores.\n")
         f.write(f"- **Evolución del Alpha Anualizado:** Pasa de **{m1_t4['alpha_annual_pct']:+.2f}%** (t={m1_t4['alpha_t']:+.2f}, p={m1_t4['alpha_p']:.3f}) a **{m3_t4['alpha_annual_pct']:+.2f}%** (t={m3_t4['alpha_t']:+.2f}, p={m3_t4['alpha_p']:.3f}).\n")
-        f.write(f"- **Cargas Factoriales (Betas):**\n")
+        f.write("- **Cargas Factoriales (Betas):**\n")
         f.write(f"  * **Beta SPY:** {m3_t4['betas']['SPY']['beta']:.2f} (t={m3_t4['betas']['SPY']['t']:.2f}, p={m3_t4['betas']['SPY']['p']:.3f})\n")
         f.write(f"  * **Beta GLD:** {m3_t4['betas']['GLD']['beta']:.2f} (t={m3_t4['betas']['GLD']['t']:.2f}, p={m3_t4['betas']['GLD']['p']:.3f})\n")
         f.write(f"  * **Beta MTUM:** {m3_t4['betas']['MTUM']['beta']:.2f} (t={m3_t4['betas']['MTUM']['t']:.2f}, p={m3_t4['betas']['MTUM']['p']:.3f})\n\n")

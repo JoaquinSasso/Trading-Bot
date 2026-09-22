@@ -22,24 +22,18 @@
 
 | Período | Variante | Retorno Acumulado | CAGR Anual | Sharpe Real | Max Drawdown | Trades | Exposición Media | Fricción ($) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Muestra Completa 2018–2026 (7.6a) | **Con Ranking (Baseline)** | **+38.55%** | 4.35% | 0.38 | 4.71% | 1182 | 43.7% | $115.55 |
-| Muestra Completa 2018–2026 (7.6a) | **Simplificado (Sin Ranking)** | **+42.50%** | 4.74% | 0.57 | 3.37% | 1130 | 34.1% | $88.61 |
-| | *Diferencia (Simplificado - Ranking)* | *+3.95%* | *+0.38%* | *+0.19* | *-1.34%* | | | |
-| Trienio 2020–2022 | **Con Ranking (Baseline)** | **+11.93%** | 3.83% | 0.70 | 4.40% | 354 | 36.6% | $31.53 |
-| Trienio 2020–2022 | **Simplificado (Sin Ranking)** | **+8.66%** | 2.81% | 0.71 | 3.44% | 250 | 22.8% | $19.35 |
-| | *Diferencia (Simplificado - Ranking)* | *-3.28%* | *-1.02%* | *+0.01* | *-0.96%* | | | |
-| 2020 | **Con Ranking (Baseline)** | **+7.84%** | 7.81% | 1.37 | 3.45% | 112 | 43.5% | $9.73 |
-| 2020 | **Simplificado (Sin Ranking)** | **+5.75%** | 5.72% | 1.29 | 3.44% | 80 | 30.1% | $5.67 |
-| | *Diferencia (Simplificado - Ranking)* | *-2.09%* | *-2.08%* | *-0.08* | *-0.01%* | | | |
-| 2021 | **Con Ranking (Baseline)** | **+3.04%** | 3.04% | 0.59 | 4.37% | 200 | 55.6% | $17.70 |
-| 2021 | **Simplificado (Sin Ranking)** | **+2.19%** | 2.19% | 0.81 | 2.53% | 126 | 29.9% | $10.18 |
-| | *Diferencia (Simplificado - Ranking)* | *-0.84%* | *-0.84%* | *+0.21* | *-1.84%* | | | |
-| 2022 | **Con Ranking (Baseline)** | **+1.79%** | 1.79% | 0.16 | 2.56% | 40 | 8.0% | $2.80 |
-| 2022 | **Simplificado (Sin Ranking)** | **+2.94%** | 2.95% | 0.74 | 2.15% | 22 | 4.9% | $1.72 |
-| | *Diferencia (Simplificado - Ranking)* | *+1.15%* | *+1.16%* | *+0.59* | *-0.41%* | | | |
-| 2025 | **Con Ranking (Baseline)** | **+6.48%** | 6.54% | 0.47 | 3.76% | 184 | 48.7% | $17.47 |
-| 2025 | **Simplificado (Sin Ranking)** | **+6.82%** | 6.87% | 0.61 | 3.00% | 180 | 38.4% | $12.49 |
-| | *Diferencia (Simplificado - Ranking)* | *+0.33%* | *+0.34%* | *+0.15* | *-0.76%* | | | |
+| Trienio 2020–2022 | **Con Ranking (Baseline)** | **+13.97%** | 4.45% | 0.69 | 5.51% | 120 | 75.0% | $24.87 |
+| Trienio 2020–2022 | **Simplificado (Sin Ranking)** | **+9.45%** | 3.06% | 0.49 | 6.15% | 198 | 75.0% | $27.69 |
+| | *Diferencia (Simplificado - Ranking)* | *-4.52%* | *-1.40%* | *-0.20* | *+0.64%* | | | |
+| 2020 (Crash COVID + Rebote) | **Con Ranking (Baseline)** | **+11.50%** | 11.45% | 1.58 | 4.14% | 42 | 75.0% | $9.58 |
+| 2020 (Crash COVID + Rebote) | **Simplificado (Sin Ranking)** | **+5.33%** | 5.30% | 0.81 | 6.15% | 73 | 75.0% | $10.45 |
+| | *Diferencia (Simplificado - Ranking)* | *-6.17%* | *-6.15%* | *-0.77* | *+2.01%* | | | |
+| 2021 (Mercado Alcista) | **Con Ranking (Baseline)** | **-2.78%** | -2.78% | 0.00 | 4.62% | 56 | 75.0% | $9.94 |
+| 2021 (Mercado Alcista) | **Simplificado (Sin Ranking)** | **+1.20%** | 1.20% | 0.00 | 3.46% | 88 | 75.0% | $11.79 |
+| | *Diferencia (Simplificado - Ranking)* | *+3.99%* | *+3.99%* | *+0.00* | *-1.16%* | | | |
+| 2022 (Mercado Bajista Severo) | **Con Ranking (Baseline)** | **-1.20%** | -1.20% | 0.00 | 3.17% | 28 | 75.0% | $4.14 |
+| 2022 (Mercado Bajista Severo) | **Simplificado (Sin Ranking)** | **+0.08%** | 0.08% | 0.00 | 3.05% | 34 | 75.0% | $4.07 |
+| | *Diferencia (Simplificado - Ranking)* | *+1.28%* | *+1.28%* | *+0.00* | *-0.12%* | | | |
 
 ---
 
@@ -58,12 +52,10 @@
 
 ## 4. Dictamen Institucional y Decisión de Candidato Primario
 
-- **Desempeño Muestra Completa (2018–2026):**
-  * Versión con Ranking    : **+38.55%** (CAGR: 4.35%, Sharpe: 0.38, MaxDD: 4.71%)
-  * Versión Simplificada   : **+42.50%** (CAGR: 4.74%, Sharpe: 0.57, MaxDD: 3.37%)
-  * Diferencia de Retorno : **+3.95 puntos porcentuales** (Diferencia Sharpe: +0.19)
+- **Desempeño Ventana Desarrollo (2020–2022):**
+  * Versión con Ranking    : **+13.97%** (CAGR: 4.45%, Sharpe: 0.69, MaxDD: 5.51%)
+  * Versión Simplificada   : **+9.45%** (CAGR: 3.06%, Sharpe: 0.49, MaxDD: 6.15%)
+  * Diferencia de Retorno : **-4.52 puntos porcentuales** (Diferencia Sharpe: -0.20)
 
-### Veredicto T-16: ADOPCIÓN RECOMENDADA.
-El desempeño de la variante simplificada es cuantitativamente equivalente (o superior) al de la versión con ranking, pero **con 11 parámetros libres menos**.
-Al no existir ventaja estadística en ordenar los sectores GICS (confirmado por F-20), el ranking es sobreajuste puro que infló el PBO al 84.45%.
-Se adopta formalmente la **Variante Simplificada T-16** (Gate Absoluto + Volatilidad Inversa sobre todos los calificados) como la especificación del Candidato Primario para la Fase 3 de Paper Trading.
+### Veredicto T-16: DESVIACIÓN MATERIAL.
+La variante simplificada exhibe un comportamiento divergente que requiere análisis adicional antes de sustituir la arquitectura base.

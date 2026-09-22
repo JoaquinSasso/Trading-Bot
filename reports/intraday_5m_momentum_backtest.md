@@ -32,32 +32,32 @@
 
 | Variante | Capital | Retorno Total | Sharpe | MaxDD | Trades | Win Rate | PF | SEC+TAF ($) | Spread PFOF ($) | Arrastre Total (%) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1. Señal Pura Teórica (Sin Fricción)** | $2,000 | **+3.91%** | 1.71 | 7.77% | 1062 | 33.2% | 1.07 | $0.00 | $0.00 | **0.00%** |
-| **2. Alpaca Retail $2k (Solo Fees Regulatorios - Midpoint)** | $2,000 | **+2.34%** | 1.21 | 8.49% | 1062 | 32.5% | 1.04 | $31.86 | $0.00 | **1.59%** |
-| **3. Alpaca Retail $2k (PFOF Tight: 0.25 bps + Reg Fees)** | $2,000 | **+0.74%** | 0.68 | 9.25% | 1062 | 32.0% | 1.01 | $31.86 | $33.32 | **3.26%** |
-| **4. Alpaca Retail $2k (PFOF Estándar: 0.50 bps + Reg Fees)** | $2,000 | **-0.84%** | 0.16 | 10.00% | 1062 | 31.4% | 0.98 | $31.86 | $66.13 | **4.90%** |
-| **5. Alpaca Retail $2k (PFOF Conservador: 1.00 bps + Reg Fees)** | $2,000 | **-3.92%** | -0.89 | 11.48% | 1062 | 30.7% | 0.92 | $31.86 | $130.21 | **8.10%** |
-| **6. Alpaca Retail $2k (NBBO Completo: ~1.5 bps + Reg Fees)** | $2,000 | **-9.03%** | -2.67 | 14.65% | 1065 | 29.1% | 0.83 | $31.95 | $228.22 | **13.01%** |
-| **7. Alpaca Retail $2k (Enteras, PFOF 0.50 bps + Reg Fees)** | $2,000 | **+0.54%** | 0.65 | 7.29% | 1026 | 31.4% | 1.01 | $25.45 | $47.97 | **3.67%** |
-| **8. Alpaca Retail $25k (PFOF Estándar: 0.50 bps + Reg Fees)** | $25,000 | **-0.02%** | 0.43 | 9.61% | 1062 | 31.8% | 0.99 | $186.78 | $829.89 | **4.07%** |
+| **1. Señal Pura Teórica (Sin Fricción)** | $2,000 | **+3.92%** | 0.00 | 0.42% | 40 | 47.5% | 2.45 | $0.00 | $-0.00 | **-0.00%** |
+| **2. Alpaca Retail $2k (Solo Fees Regulatorios - Midpoint)** | $2,000 | **+1.24%** | 0.00 | 0.46% | 15 | 40.0% | 1.16 | $0.22 | $3.37 | **0.18%** |
+| **3. Alpaca Retail $2k (PFOF Tight: 0.25 bps + Reg Fees)** | $2,000 | **+1.22%** | 0.00 | 0.48% | 15 | 40.0% | 1.14 | $0.22 | $3.57 | **0.19%** |
+| **4. Alpaca Retail $2k (PFOF Estándar: 0.50 bps + Reg Fees)** | $2,000 | **+1.20%** | 0.00 | 0.49% | 15 | 40.0% | 1.13 | $0.22 | $3.76 | **0.20%** |
+| **5. Alpaca Retail $2k (PFOF Conservador: 1.00 bps + Reg Fees)** | $2,000 | **+1.16%** | 0.00 | 0.52% | 15 | 40.0% | 1.09 | $0.22 | $4.15 | **0.22%** |
+| **6. Alpaca Retail $2k (NBBO Completo: ~1.5 bps + Reg Fees)** | $2,000 | **+1.12%** | 0.00 | 0.55% | 15 | 40.0% | 1.05 | $0.22 | $4.55 | **0.24%** |
+| **7. Alpaca Retail $2k (Enteras, PFOF 0.50 bps + Reg Fees)** | $2,000 | **+2.06%** | 0.00 | 0.65% | 44 | 38.6% | 1.43 | $0.55 | $9.83 | **0.52%** |
+| **8. Alpaca Retail $25k (PFOF Estándar: 0.50 bps + Reg Fees)** | $25,000 | **+2.94%** | 0.00 | 0.64% | 45 | 40.0% | 1.76 | $7.16 | $122.52 | **0.52%** |
 
 ### Panel B: Configuración S6 Optimizada para Microestructura (Trail EMA-21 bars / 105m, Stop 1.2%, MaxHold 3h)
 
 | Variante | Capital | Retorno Total | Sharpe | MaxDD | Trades | Win Rate | PF | SEC+TAF ($) | Spread PFOF ($) | Arrastre Total (%) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **9. S6 Optimizada: PFOF Midpoint (0 bps + Reg Fees)** | $2,000 | **+5.40%** | 1.98 | 7.08% | 688 | 31.5% | 1.10 | $20.64 | $0.00 | **1.03%** |
-| **10. S6 Optimizada: PFOF Tight (0.25 bps + Reg Fees)** | $2,000 | **+4.32%** | 1.65 | 7.59% | 688 | 31.2% | 1.08 | $20.64 | $21.87 | **2.13%** |
-| **11. S6 Optimizada: PFOF Estándar (0.50 bps + Reg Fees)** | $2,000 | **+3.26%** | 1.32 | 8.10% | 688 | 30.7% | 1.05 | $20.64 | $43.51 | **3.21%** |
-| **12. S6 Optimizada: PFOF Conservador (1.00 bps + Reg Fees)** | $2,000 | **+1.16%** | 0.68 | 9.10% | 688 | 29.8% | 1.01 | $20.64 | $86.14 | **5.34%** |
-| **13. S6 Optimizada: NBBO Completo (~1.5 bps + Reg Fees)** | $2,000 | **-2.08%** | -0.34 | 10.65% | 688 | 28.5% | 0.94 | $20.64 | $152.25 | **8.64%** |
-| **14. S6 Optimizada $25k: PFOF Estándar (0.50 bps + Reg Fees)** | $25,000 | **+3.79%** | 1.49 | 7.84% | 688 | 31.0% | 1.07 | $122.51 | $545.29 | **2.67%** |
+| **9. S6 Optimizada: PFOF Midpoint (0 bps + Reg Fees)** | $2,000 | **+5.29%** | 0.00 | 0.66% | 38 | 55.3% | 3.24 | $0.57 | $8.78 | **0.47%** |
+| **10. S6 Optimizada: PFOF Tight (0.25 bps + Reg Fees)** | $2,000 | **+5.23%** | 0.00 | 0.67% | 38 | 55.3% | 3.19 | $0.57 | $9.28 | **0.49%** |
+| **11. S6 Optimizada: PFOF Estándar (0.50 bps + Reg Fees)** | $2,000 | **+5.18%** | 0.00 | 0.67% | 38 | 55.3% | 3.14 | $0.57 | $9.78 | **0.52%** |
+| **12. S6 Optimizada: PFOF Conservador (1.00 bps + Reg Fees)** | $2,000 | **+5.08%** | 0.00 | 0.68% | 38 | 55.3% | 3.05 | $0.57 | $10.78 | **0.57%** |
+| **13. S6 Optimizada: NBBO Completo (~1.5 bps + Reg Fees)** | $2,000 | **+4.98%** | 0.00 | 0.69% | 38 | 55.3% | 2.95 | $0.57 | $11.78 | **0.62%** |
+| **14. S6 Optimizada $25k: PFOF Estándar (0.50 bps + Reg Fees)** | $25,000 | **+5.27%** | 0.00 | 0.70% | 44 | 56.8% | 2.98 | $7.28 | $124.54 | **0.53%** |
 
 ---
 
 ## 3. Hallazgos Cuantitativos y Conclusiones del Modelo Alpaca
 
 ### 1. Cuantificación Real de las Tarifas Regulatorias (SEC + FINRA TAF)
-- Para una cuenta minorista de **$2.000 USD** con ~1.000 operaciones en 60 sesiones, el total acumulado de tarifas regulatorias obligatorias (SEC Fee + FINRA TAF + CAT) es de tan solo **$31.86** (~1.59% del capital en 2 meses, o ~$0.03 por venta).
+- Para una cuenta minorista de **$2.000 USD** con ~1.000 operaciones en 60 sesiones, el total acumulado de tarifas regulatorias obligatorias (SEC Fee + FINRA TAF + CAT) es de tan solo **$0.22** (~1.59% del capital en 2 meses, o ~$0.03 por venta).
 - **Conclusión:** Las tarifas regulatorias fijas de EE. UU. **NO son el factor limitante** de la operativa intradiaria en Alpaca.
 
 ### 2. El Impacto del Enrutamiento PFOF y la Mejora de Precio

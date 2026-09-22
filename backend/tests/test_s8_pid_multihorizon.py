@@ -1,6 +1,5 @@
 """Tests unitarios para la estrategia S8: PID Multi-Horizonte con 8 escalas temporales."""
 
-import math
 import numpy as np
 import pandas as pd
 import pytest

@@ -19,18 +19,25 @@ from __future__ import annotations
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 import statsmodels.api as sm
+from scipy import stats
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = PROJECT_ROOT / "backend"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
 DATA_14_DIR = PROJECT_ROOT / "data" / "historical_14"
 DATA_UNIV_A_DIR = PROJECT_ROOT / "data" / "universe_a"
 REPORTS_DIR = PROJECT_ROOT / "reports"
-
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from optimize_and_benchmark_portfolio import load_all_market_data
 
 UNIVERSE_14 = [
@@ -327,11 +334,14 @@ def main() -> int:
     daily_14 = load_all_market_data(DATA_14_DIR, symbols=UNIVERSE_14)
     daily_univ_a = load_all_market_data(DATA_UNIV_A_DIR, symbols=ALL_UNIVERSE_A_SYMBOLS)
 
+    from tbot.backtest.guards import assert_not_holdout
+
     start_d = date(2020, 1, 2)
-    end_d = date(2025, 12, 31)
+    end_d = date(2022, 12, 30)
+    assert_not_holdout(start_d, end_d, resolution="daily")
 
     # 1. S5 (13 Activos, excluyendo SPY)
-    print("\n[1/3] Evaluando S5 (13 Activos, 2020–2025)...")
+    print("\n[1/3] Evaluando S5 (13 Activos, 2020–2022)...")
     s5_symbols = [s for s in UNIVERSE_14 if s != "SPY"]
     res_s5 = evaluate_long_short_momentum(
         daily_data=daily_14,
@@ -358,14 +368,14 @@ def main() -> int:
     print(f"  - Error Estándar             : ±{non['se']:5.2f}% | t = {non['t_stat']:+5.2f} | p = {non['p_val']:6.3f}")
 
     nw_bot = res_s5["nw_bot"]
-    print(f"\nSpread Extremo: Long rank(1,2) vs Short Bottom 2 rank(12,13) (Newey-West):")
+    print("\nSpread Extremo: Long rank(1,2) vs Short Bottom 2 rank(12,13) (Newey-West):")
     print(f"  - Spread Medio (45d)         : {nw_bot['mean']:+6.2f}%")
     print(f"  - Error Estándar Newey-West  : ±{nw_bot['se_nw']:5.2f}% | t = {nw_bot['t_nw']:+5.2f} | p = {nw_bot['p_nw']:6.3f}")
 
     # Retorno en nivel Long rank(1,2)
     nw_l = res_s5["nw_long"]
     non_long = res_s5["non_long"]
-    print(f"\nRetorno Absoluto en Nivel (Long rank 1,2):")
+    print("\nRetorno Absoluto en Nivel (Long rank 1,2):")
     print(f"  - Retorno Medio (45d)        : {nw_l['mean']:+6.2f}%")
     print(f"  - OLS Clásico (solapado)     : ±{nw_l['se_ols']:5.2f}% | t = {nw_l['t_ols']:+5.2f} | p = {nw_l['p_ols']:6.3f}")
     print(f"  - Newey-West (lag=8)         : ±{nw_l['se_nw']:5.2f}% | t = {nw_l['t_nw']:+5.2f} | p = {nw_l['p_nw']:6.3f}")
@@ -383,7 +393,7 @@ def main() -> int:
     )
     nw_g = res_gics["nw_6_7"]
     non_g = res_gics["non_6_7"]
-    print(f"Sectores GICS — Spread rank(1,2) - rank(6,7):")
+    print("Sectores GICS — Spread rank(1,2) - rank(6,7):")
     print(f"  - Semanal Newey-West (N={nw_g['n_obs']}) : Spread: {nw_g['mean']:+6.2f}% | SE: ±{nw_g['se_nw']:5.2f}% | t = {nw_g['t_nw']:+5.2f} | p = {nw_g['p_nw']:6.3f}")
     print(f"  - No Solapado (N={non_g['n_obs']})        : Spread: {non_g['mean']:+6.2f}% | SE: ±{non_g['se']:5.2f}% | t = {non_g['t_stat']:+5.2f} | p = {non_g['p_val']:6.3f}")
 
@@ -393,11 +403,11 @@ def main() -> int:
     res_fi = evaluate_pair_block(daily_univ_a, "IEF", "TIP", start_d, end_d)
     res_intl = evaluate_pair_block(daily_univ_a, "IEFA", "IEMG", start_d, end_d)
 
-    print(f"Metales (GLDM vs SLV):")
+    print("Metales (GLDM vs SLV):")
     print(f"  - Newey-West: Spread: {res_metals['nw']['mean']:+6.2f}% | t = {res_metals['nw']['t_nw']:+5.2f} | p = {res_metals['nw']['p_nw']:6.3f}")
-    print(f"Renta Fija (IEF vs TIP):")
+    print("Renta Fija (IEF vs TIP):")
     print(f"  - Newey-West: Spread: {res_fi['nw']['mean']:+6.2f}% | t = {res_fi['nw']['t_nw']:+5.2f} | p = {res_fi['nw']['p_nw']:6.3f}")
-    print(f"Internacional (IEFA vs IEMG):")
+    print("Internacional (IEFA vs IEMG):")
     print(f"  - Newey-West: Spread: {res_intl['nw']['mean']:+6.2f}% | t = {res_intl['nw']['t_nw']:+5.2f} | p = {res_intl['nw']['p_nw']:6.3f}")
 
     # Actualizar reports/rank_monotonicity.md

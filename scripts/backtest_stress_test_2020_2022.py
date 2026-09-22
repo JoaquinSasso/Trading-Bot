@@ -31,6 +31,7 @@ from optimize_and_benchmark_portfolio import (
     run_s5_momentum_simulation,
     run_strategy_simulation,
 )
+from tbot.backtest.engine import BacktestEngine  # noqa: F401
 from tbot.news.store import HistoricalNewsFeatureStore
 
 DATA_DIR = PROJECT_ROOT / "data" / "historical_2020_2022"

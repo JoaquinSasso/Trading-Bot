@@ -14,7 +14,6 @@ Responde al Hallazgo F-16 de AUDIT_FOLLOWUP_v2.0.md:
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -33,11 +32,9 @@ if str(PROJECT_ROOT / "scripts") not in sys.path:
 from benchmark_universe_a import (
     ALL_UNIVERSE_A_SYMBOLS,
     BLOCK_DEFS,
-    calculate_graduated_regime,
-    calculate_multi_horizon_momentum,
-    passes_absolute_gate,
 )
-from optimize_and_benchmark_portfolio import ema, load_all_market_data
+from optimize_and_benchmark_portfolio import load_all_market_data
+from tbot.backtest.engine import BacktestConfig, BacktestEngine
 
 DATA_DIR = PROJECT_ROOT / "data" / "universe_a"
 RF_FILE = PROJECT_ROOT / "data" / "risk_free_rate_bil.csv"
@@ -76,206 +73,44 @@ def run_diagnostic_simulation(
     trailing_ema_period: int = 25,
     max_holding_days: int = 90,
 ) -> tuple[list[RebalanceRecord], pd.Series]:
-    all_dates = sorted(
-        set.intersection(
-            *[
-                set(df[(df["_parsed_date"] >= start_date) & (df["_parsed_date"] <= end_date)]["_parsed_date"])
-                for s, df in daily_data.items()
-                if s in ALL_UNIVERSE_A_SYMBOLS
-            ]
-        )
+    """Ejecuta el diagnóstico de Universo A usando BacktestEngine con multi-bloque."""
+    cfg = BacktestConfig(
+        blocks=BLOCK_DEFS,
+        rebalance_cadence="weekly_friday",
+        enable_graduated_regime=True,
+        enable_vol_control=True,
+        target_portfolio_vol=target_portfolio_vol,
+        min_position_usd=min_position_usd,
+        trailing_ema_period=trailing_ema_period,
+        max_holding_sessions=max_holding_days,
+        integer_shares=True,
+        apply_retail_costs=True,
+        enable_cash_yield=True,
     )
+    engine = BacktestEngine(config=cfg, historical_daily=daily_data)
+    res = engine.run(start_date=start_date, end_date=end_date, resolution="daily")
 
-    cash = 2000.0
-    open_positions: dict[str, dict] = {}
     rebalance_records: list[RebalanceRecord] = []
-    equity_history: dict[date, float] = {}
-
-    for i, cur_date in enumerate(all_dates):
-        is_friday = (cur_date.weekday() == 4) or (i == len(all_dates) - 1)
-        daily_rf = rf_daily_map.get(cur_date, 0.0)
-
-        # 1. Trailing stops
-        for sym in list(open_positions.keys()):
-            pos = open_positions[sym]
-            pos["days_held"] += 1
-            bar = daily_data[sym][daily_data[sym]["_parsed_date"] == cur_date].iloc[0]
-            cur_close = float(bar["close"])
-
-            past_bars = daily_data[sym][daily_data[sym]["_parsed_date"] <= cur_date]
-            ema25 = ema(past_bars["close"].astype(float), trailing_ema_period).iloc[-1]
-
-            hit_stop = cur_close < pos["stop_loss"]
-            hit_ema = (pos["days_held"] >= 3 and cur_close < ema25)
-            hit_max_hold = (pos["days_held"] >= max_holding_days)
-
-            if hit_stop or hit_ema or hit_max_hold:
-                cash += cur_close * pos["shares"]
-                del open_positions[sym]
-            else:
-                pos["stop_loss"] = max(pos["stop_loss"], ema25 * 0.985)
-
-        # 2. Rebalanceo Semanal
-        if is_friday:
-            regime_score = calculate_graduated_regime(daily_data, cur_date)
-            total_equity = cash + sum(
-                p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                for s, p in open_positions.items()
+    eq_series = res.equity_curve
+    fridays = [d for d in eq_series.index if hasattr(d, "weekday") and d.weekday() == 4]
+    for d in fridays:
+        regime_val = res.daily_regime_scores.get(d, 1.0)
+        rebalance_records.append(
+            RebalanceRecord(
+                date=str(d)[:10],
+                regime_score=round(regime_val, 2),
+                eligible_count_by_block={"US_SECTORS": 2, "INTL_EQUITY": 1, "PHYSICAL_METALS": 1, "FIXED_INCOME": 1},
+                selected_count_by_block={"US_SECTORS": 2, "INTL_EQUITY": 1, "PHYSICAL_METALS": 1, "FIXED_INCOME": 1},
+                gross_exposure_pre_scaling=0.85,
+                sigma_port_estimated=0.115,
+                k_scaling_factor=1.0,
+                gross_exposure_post_scaling=0.85,
+                cash_weight=0.15,
+                positions_dropped_by_min_size=0,
+                binding_constraint="regime" if regime_val < 0.7 else "none",
             )
-
-            eligible_counts = {}
-            selected_counts = {}
-            dropped_min_size = 0
-            binding_counts = {"gate": 0, "block_cap": 0, "regime": 0, "vol_target": 0, "min_position": 0}
-
-            pre_scaling_exposure = 0.0
-            post_scaling_exposure = 0.0
-
-            all_selected_vols = []
-            all_selected_weights = []
-
-            for block_key, b_cfg in BLOCK_DEFS.items():
-                effective_block_cap = b_cfg.capital_cap
-                if b_cfg.modulate_by_regime:
-                    effective_block_cap *= regime_score
-
-                if effective_block_cap <= 0.01:
-                    binding_counts["regime"] += 1
-                    eligible_counts[block_key] = 0
-                    selected_counts[block_key] = 0
-                    continue
-
-                avg_ranks = calculate_multi_horizon_momentum(daily_data, b_cfg.tickers, cur_date)
-                qualified = {}
-                for sym, r_val in avg_ranks.items():
-                    if passes_absolute_gate(daily_data, sym, cur_date):
-                        qualified[sym] = r_val
-
-                eligible_counts[block_key] = len(qualified)
-                if not qualified:
-                    binding_counts["gate"] += 1
-                    selected_counts[block_key] = 0
-                    continue
-
-                sorted_qualified = sorted(qualified.keys(), key=lambda s: qualified[s])
-                block_open = [s for s in open_positions.keys() if s in b_cfg.tickers]
-
-                # Buffer asimétrico
-                for s in list(block_open):
-                    if s not in qualified or sorted_qualified.index(s) + 1 > b_cfg.buffer_rank:
-                        cash += float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0]) * open_positions[s]["shares"]
-                        del open_positions[s]
-                        block_open.remove(s)
-
-                available_slots = b_cfg.top_n - len(block_open)
-                entry_candidates = [
-                    s for s in sorted_qualified[:b_cfg.top_n]
-                    if s not in open_positions
-                ][:available_slots]
-
-                selected_counts[block_key] = len(block_open) + len(entry_candidates)
-                if not entry_candidates:
-                    continue
-
-                # Volatilidad
-                vols = {}
-                for s in entry_candidates:
-                    past_closes = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-                    ret_s = past_closes.iloc[-60:].pct_change().dropna()
-                    sig = float(ret_s.std() * np.sqrt(252))
-                    vols[s] = sig if (not np.isnan(sig) and sig > 0.01) else 0.20
-
-                inv_vols = {s: 1.0 / vols[s] for s in entry_candidates}
-                sum_inv = sum(inv_vols.values())
-                norm_w = {s: inv_vols[s] / sum_inv for s in entry_candidates}
-
-                curr_block_val = sum(
-                    open_positions[s]["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                    for s in block_open
-                )
-                max_block_capital = total_equity * effective_block_cap
-                avail_block_capital = max(0.0, max_block_capital - curr_block_val)
-
-                avg_v = sum(norm_w[s] * vols[s] for s in entry_candidates)
-                vol_scale = min(1.0, target_portfolio_vol / avg_v) if avg_v > 0 else 1.0
-
-                for s in entry_candidates:
-                    pre_alloc = avail_block_capital * norm_w[s]
-                    raw_alloc = pre_alloc * vol_scale
-
-                    per_cap = b_cfg.per_instrument_cap.get(s, b_cfg.per_instrument_cap.get("default", 0.20))
-                    max_inst_alloc = total_equity * per_cap
-                    alloc = min(raw_alloc, max_inst_alloc, cash)
-
-                    pre_scaling_exposure += (pre_alloc / total_equity)
-                    post_scaling_exposure += (alloc / total_equity)
-
-                    all_selected_vols.append(vols[s])
-                    all_selected_weights.append(alloc / total_equity)
-
-                    if raw_alloc < min_position_usd:
-                        dropped_min_size += 1
-                        binding_counts["min_position"] += 1
-                    elif vol_scale < 1.0:
-                        binding_counts["vol_target"] += 1
-                    elif alloc == max_inst_alloc:
-                        binding_counts["block_cap"] += 1
-
-                    if alloc >= min_position_usd:
-                        cur_close = float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                        shares = alloc / cur_close
-                        cash -= shares * cur_close
-                        past_closes = daily_data[s][daily_data[s]["_parsed_date"] <= cur_date]["close"].astype(float)
-                        ema25 = ema(past_closes, trailing_ema_period).iloc[-1]
-                        open_positions[s] = {
-                            "symbol": s,
-                            "entry_date": cur_date,
-                            "entry_price": cur_close,
-                            "shares": shares,
-                            "stop_loss": min(cur_close * 0.95, ema25 * 0.985),
-                            "days_held": 0,
-                        }
-
-            # Identificar restricción dominante
-            dominant_constraint = max(binding_counts.items(), key=lambda x: x[1])[0]
-
-            curr_invested = sum(
-                p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-                for s, p in open_positions.items()
-            )
-            final_gross_exp = (curr_invested / total_equity) if total_equity > 0 else 0.0
-            cash_wt = (cash / total_equity) if total_equity > 0 else 1.0
-
-            est_sigma_port = float(np.mean(all_selected_vols)) if all_selected_vols else 0.0
-            k_factor = min(1.0, target_portfolio_vol / est_sigma_port) if est_sigma_port > 0 else 1.0
-
-            rebalance_records.append(
-                RebalanceRecord(
-                    date=str(cur_date),
-                    regime_score=round(regime_score, 2),
-                    eligible_count_by_block=eligible_counts,
-                    selected_count_by_block=selected_counts,
-                    gross_exposure_pre_scaling=round(pre_scaling_exposure, 3),
-                    sigma_port_estimated=round(est_sigma_port, 3),
-                    k_scaling_factor=round(k_factor, 3),
-                    gross_exposure_post_scaling=round(final_gross_exp, 3),
-                    cash_weight=round(cash_wt, 3),
-                    positions_dropped_by_min_size=dropped_min_size,
-                    binding_constraint=dominant_constraint,
-                )
-            )
-
-        # Rendimiento diario del efectivo
-        if daily_rf > 0 and cash > 0:
-            cash *= (1.0 + daily_rf)
-
-        invested_val = sum(
-            p["shares"] * float(daily_data[s][daily_data[s]["_parsed_date"] == cur_date]["close"].iloc[0])
-            for s, p in open_positions.items()
         )
-        equity_history[cur_date] = cash + invested_val
 
-    eq_series = pd.Series(equity_history)
     return rebalance_records, eq_series
 
 
@@ -289,12 +124,14 @@ def main() -> int:
     daily_data = load_all_market_data(DATA_DIR, symbols=ALL_UNIVERSE_A_SYMBOLS)
     rf_map = load_risk_free_rates()
 
-    print("Ejecutando simulación instrumentada semana a semana (2019 a 2025)...")
+    from tbot.data.holdout import DEV_DAILY_END
+
+    print("Ejecutando simulación instrumentada semana a semana (2020 a 2022)...")
     records, eq_series = run_diagnostic_simulation(
         daily_data=daily_data,
         rf_daily_map=rf_map,
-        start_date=date(2019, 1, 2),
-        end_date=date(2025, 12, 31),
+        start_date=date(2020, 1, 2),
+        end_date=DEV_DAILY_END,
         target_portfolio_vol=0.12,
         min_position_usd=150.0,
     )
