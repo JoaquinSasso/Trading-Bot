@@ -48,11 +48,7 @@ from tbot.backtest.metrics import BacktestMetrics, load_risk_free_rate_bil
 
 from tbot.strategies import (
     DualMomentumLeaderStrategy,
-    HourlyIntradayMultiHorizonStrategy,
-    Intraday5mMultiHorizonStrategy,
-    IntradayMomentumStrategy,
     MeanReversionRSI2Strategy,
-    OpeningRangeBreakoutStrategy,
     S7PIDScorerStrategy,
     S8PIDMultihorizonStrategy,
     TrendPullbackStrategy,
@@ -664,52 +660,6 @@ def main():
     # SPY benchmark para hourly
     spy_h = daily_from_hourly.get("SPY")
 
-    # ── S6 Hourly: Intraday Multi-Horizon (1h) ──────────────────────
-    print("\n▶ S6 — Hourly Multi-Horizon Momentum [1h]")
-    try:
-        strat_s6h = HourlyIntradayMultiHorizonStrategy()
-        result_s6h = run_strategy_backtest(
-            strategy=strat_s6h,
-            daily_data=daily_from_hourly,
-            intraday_data=hourly_data,
-            universe=UNIVERSE_HOURLY,
-            start=HOURLY_START, end=HOURLY_END,
-            resolution="1h", rf_series=rf_series,
-            extra_config={
-                "intraday_start_time": time(9, 30),
-                "intraday_end_time": time(14, 30),
-                "flatten_time": time(15, 55),
-            },
-        )
-        spy_eq_s6h = compute_spy_buy_hold(spy_h, HOURLY_START, HOURLY_END, float(INITIAL_CAPITAL)) if spy_h is not None else pd.Series(dtype=float)
-        chart_path_s6h = CHARTS_DIR / "s6_hourly_momentum.png"
-        plot_equity_comparison(result_s6h.equity_curve, spy_eq_s6h, "S6 — Hourly Multi-Horizon", chart_path_s6h)
-        reports.append(StrategyReport(
-            name="S6 — Hourly Multi-Horizon Momentum",
-            short_name="S6-1h",
-            description=(
-                "Cada hora analiza el impulso de los últimos 1h, 2h, 3h, 4h y 7h (sesión completa) "
-                "de cada activo, los ordena por fuerza combinada y compra los 3 mejores. "
-                "Cierra todas las posiciones antes del cierre de cada día para evitar riesgo nocturno."
-            ),
-            timeframe="hourly",
-            start_date=HOURLY_START, end_date=HOURLY_END,
-            metrics=result_s6h.metrics,
-            equity_curve=result_s6h.equity_curve,
-            spy_equity=spy_eq_s6h,
-            chart_path=str(chart_path_s6h.relative_to(REPORTS_DIR)),
-            total_trades=result_s6h.metrics.total_trades,
-        ))
-        print(f"   ✅ Completado: {result_s6h.metrics.total_trades} trades, "
-              f"Retorno: {result_s6h.metrics.total_return_pct:.2f}%")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-        reports.append(StrategyReport(
-            name="S6 — Hourly Multi-Horizon Momentum", short_name="S6-1h",
-            description="Error durante ejecución.", timeframe="hourly",
-            start_date=HOURLY_START, end_date=HOURLY_END, error=str(e),
-        ))
-
     # ── S8: PID Multi-Horizon (Hourly + Daily) ───────────────────────
     print("\n▶ S8 — PID Multi-Horizon [Variante A, 1h]")
     try:
@@ -800,171 +750,9 @@ def main():
         ))
 
     # ─────────────────────────────────────────────────────────────────────
-    # GRUPO 3: ESTRATEGIAS DE 5 MINUTOS (ventana diagnóstica 2026-06-26 a 2026-09-21)
-    # Nota: Ventana diagnóstica corta (~60 sesiones), no apta para selección de modelos
-    # ─────────────────────────────────────────────────────────────────────
-    print("\n" + "─" * 70)
-    print("GRUPO 3: Estrategias de 5 Minutos (ventana diagnóstica, ~60 sesiones)")
-    print("─" * 70)
-
-    FIVEMIN_START = SAMPLE_5M_START  # 2026-06-26
-    FIVEMIN_END = SAMPLE_5M_END     # 2026-09-21
-
-    print(f"\n📅 Periodo: {FIVEMIN_START} → {FIVEMIN_END}")
-    print(f"⚠️  Nota: Ventana diagnóstica corta. Resultados no aptos para selección de modelos.")
-
-    print("\n📂 Cargando datos de 5 minutos...")
-    fivemin_data = load_5min_data(FIVEMIN_DATA_DIR, UNIVERSE_5MIN)
-    print(f"   Cargados: {len(fivemin_data)} tickers")
-
-    daily_from_5m = aggregate_daily_from_intraday(fivemin_data)
-    spy_5m = daily_from_5m.get("SPY")
-
-    # ── S1: Intraday Momentum ───────────────────────────────────────
-    print("\n▶ S1 — Intraday Momentum [5min]")
-    try:
-        strat_s1 = IntradayMomentumStrategy()
-        # S1 opera solo SPY y QQQ; usar lo que haya disponible
-        s1_universe = [s for s in ["SPY", "QQQ"] if s in fivemin_data]
-        result_s1 = run_strategy_backtest(
-            strategy=strat_s1,
-            daily_data=daily_from_5m,
-            intraday_data=fivemin_data,
-            universe=s1_universe,
-            start=FIVEMIN_START, end=FIVEMIN_END,
-            resolution="5m", rf_series=rf_series,
-            extra_config={
-                "intraday_start_time": time(9, 30),
-                "intraday_end_time": time(15, 58),
-                "flatten_time": time(15, 58),
-            },
-        )
-        spy_eq_s1 = compute_spy_buy_hold(spy_5m, FIVEMIN_START, FIVEMIN_END, float(INITIAL_CAPITAL)) if spy_5m is not None else pd.Series(dtype=float)
-        chart_path_s1 = CHARTS_DIR / "s1_intraday_momentum.png"
-        plot_equity_comparison(result_s1.equity_curve, spy_eq_s1, "S1 — Intraday Momentum (5min)", chart_path_s1)
-        reports.append(StrategyReport(
-            name="S1 — Intraday Momentum",
-            short_name="S1",
-            description=(
-                "Apuesta a que el impulso de la primera media hora del día se repite en la última "
-                "media hora. Si el mercado subió entre 9:30 y 10:00, compra a las 15:30 y vende "
-                "a las 15:58. Operaciones de solo 28 minutos de duración."
-            ),
-            timeframe="5min",
-            start_date=FIVEMIN_START, end_date=FIVEMIN_END,
-            metrics=result_s1.metrics,
-            equity_curve=result_s1.equity_curve,
-            spy_equity=spy_eq_s1,
-            chart_path=str(chart_path_s1.relative_to(REPORTS_DIR)),
-            total_trades=result_s1.metrics.total_trades,
-        ))
-        print(f"   ✅ Completado: {result_s1.metrics.total_trades} trades, "
-              f"Retorno: {result_s1.metrics.total_return_pct:.2f}%")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-        reports.append(StrategyReport(
-            name="S1 — Intraday Momentum", short_name="S1",
-            description="Error durante ejecución.", timeframe="5min",
-            start_date=FIVEMIN_START, end_date=FIVEMIN_END, error=str(e),
-        ))
-
-    # ── S4: Opening Range Breakout ─────────────────────────────────
-    print("\n▶ S4 — Opening Range Breakout [5min]")
-    try:
-        strat_s4 = OpeningRangeBreakoutStrategy()
-        s4_universe = [s for s in ["SPY", "QQQ"] if s in fivemin_data]
-        result_s4 = run_strategy_backtest(
-            strategy=strat_s4,
-            daily_data=daily_from_5m,
-            intraday_data=fivemin_data,
-            universe=s4_universe,
-            start=FIVEMIN_START, end=FIVEMIN_END,
-            resolution="5m", rf_series=rf_series,
-            extra_config={
-                "intraday_start_time": time(9, 30),
-                "intraday_end_time": time(15, 55),
-                "flatten_time": time(15, 55),
-            },
-        )
-        spy_eq_s4 = compute_spy_buy_hold(spy_5m, FIVEMIN_START, FIVEMIN_END, float(INITIAL_CAPITAL)) if spy_5m is not None else pd.Series(dtype=float)
-        chart_path_s4 = CHARTS_DIR / "s4_orb.png"
-        plot_equity_comparison(result_s4.equity_curve, spy_eq_s4, "S4 — Opening Range Breakout (5min)", chart_path_s4)
-        reports.append(StrategyReport(
-            name="S4 — Opening Range Breakout (ORB)",
-            short_name="S4",
-            description=(
-                "Identifica la vela de los primeros 5 minutos de la sesión (9:30-9:35). "
-                "Si el precio supera el máximo de esa vela con volumen elevado (>1.5x normal), "
-                "compra. Objetivo de ganancia a 2x el riesgo o cierre al final del día."
-            ),
-            timeframe="5min",
-            start_date=FIVEMIN_START, end_date=FIVEMIN_END,
-            metrics=result_s4.metrics,
-            equity_curve=result_s4.equity_curve,
-            spy_equity=spy_eq_s4,
-            chart_path=str(chart_path_s4.relative_to(REPORTS_DIR)),
-            total_trades=result_s4.metrics.total_trades,
-        ))
-        print(f"   ✅ Completado: {result_s4.metrics.total_trades} trades, "
-              f"Retorno: {result_s4.metrics.total_return_pct:.2f}%")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-        reports.append(StrategyReport(
-            name="S4 — Opening Range Breakout (ORB)", short_name="S4",
-            description="Error durante ejecución.", timeframe="5min",
-            start_date=FIVEMIN_START, end_date=FIVEMIN_END, error=str(e),
-        ))
-
-    # ── S6 5min: Intraday Multi-Horizon (5min) ──────────────────────
-    print("\n▶ S6 — 5min Multi-Horizon Momentum [5min]")
-    try:
-        strat_s6_5m = Intraday5mMultiHorizonStrategy()
-        s6_5m_universe = [s for s in UNIVERSE_5MIN if s in fivemin_data]
-        result_s6_5m = run_strategy_backtest(
-            strategy=strat_s6_5m,
-            daily_data=daily_from_5m,
-            intraday_data=fivemin_data,
-            universe=s6_5m_universe,
-            start=FIVEMIN_START, end=FIVEMIN_END,
-            resolution="5m", rf_series=rf_series,
-            extra_config={
-                "intraday_start_time": time(9, 45),
-                "intraday_end_time": time(15, 30),
-                "flatten_time": time(15, 55),
-            },
-        )
-        spy_eq_s6_5m = compute_spy_buy_hold(spy_5m, FIVEMIN_START, FIVEMIN_END, float(INITIAL_CAPITAL)) if spy_5m is not None else pd.Series(dtype=float)
-        chart_path_s6_5m = CHARTS_DIR / "s6_5min_momentum.png"
-        plot_equity_comparison(result_s6_5m.equity_curve, spy_eq_s6_5m, "S6 — 5min Multi-Horizon", chart_path_s6_5m)
-        reports.append(StrategyReport(
-            name="S6 — 5min Multi-Horizon Momentum",
-            short_name="S6-5m",
-            description=(
-                "Cada 5 minutos evalúa el impulso a 10min, 15min, 30min, 45min y 60min de cada activo, "
-                "los clasifica y compra los 3 con mejor ranking combinado. Cierra todo antes del cierre."
-            ),
-            timeframe="5min",
-            start_date=FIVEMIN_START, end_date=FIVEMIN_END,
-            metrics=result_s6_5m.metrics,
-            equity_curve=result_s6_5m.equity_curve,
-            spy_equity=spy_eq_s6_5m,
-            chart_path=str(chart_path_s6_5m.relative_to(REPORTS_DIR)),
-            total_trades=result_s6_5m.metrics.total_trades,
-        ))
-        print(f"   ✅ Completado: {result_s6_5m.metrics.total_trades} trades, "
-              f"Retorno: {result_s6_5m.metrics.total_return_pct:.2f}%")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-        reports.append(StrategyReport(
-            name="S6 — 5min Multi-Horizon Momentum", short_name="S6-5m",
-            description="Error durante ejecución.", timeframe="5min",
-            start_date=FIVEMIN_START, end_date=FIVEMIN_END, error=str(e),
-        ))
-
-    # ─────────────────────────────────────────────────────────────────────
     # Generar gráfico comparativo consolidado por grupo
     # ─────────────────────────────────────────────────────────────────────
-    for group_name, tf in [("Diarias", "daily"), ("Horarias", "hourly"), ("5 Minutos", "5min")]:
+    for group_name, tf in [("Diarias", "daily"), ("Horarias", "hourly")]:
         group = [r for r in reports if r.timeframe == tf and not r.error]
         if len(group) < 2:
             continue
@@ -1037,21 +825,17 @@ def generate_markdown_report(reports: list[StrategyReport]) -> str:
     lines.append("")
     lines.append("---\n")
     lines.append("## 📋 Resumen Ejecutivo\n")
-    lines.append("Este informe compara **todas las estrategias del Trading Bot** contra el rendimiento ")
+    lines.append("Este informe compara **las estrategias del Trading Bot** contra el rendimiento ")
     lines.append("del S&P 500 (SPY) en el mayor periodo de datos disponible para cada una. ")
-    lines.append("Se divide en tres grupos según el tipo de datos que necesita cada estrategia:\n")
+    lines.append("Se divide en dos grupos según el tipo de datos que necesita cada estrategia:\n")
     lines.append("1. **Estrategias Diarias** — Analizan precios de cierre diarios (periodo más largo: 2018-2022 o 2011-2022)")
-    lines.append("2. **Estrategias Horarias** — Analizan precios cada hora (2023-2025)")
-    lines.append("3. **Estrategias de 5 Minutos** — Analizan precios cada 5 minutos (ventana diagnóstica corta de ~60 sesiones)\n")
-    lines.append("> **⚠️ Nota importante:** Los resultados de estrategias de 5 minutos son de una ventana")
-    lines.append("> diagnóstica muy corta (~3 meses) y **no deben usarse para tomar decisiones** sobre qué")
-    lines.append("> estrategia es \"mejor\". Sirven solo para verificar que el motor funciona correctamente.\n")
+    lines.append("2. **Estrategias Horarias** — Analizan precios cada hora (2023-2025)\n")
     lines.append("---\n")
 
     # ────────────────────────────────────────────────────────────
     # Sección por cada estrategia
     # ────────────────────────────────────────────────────────────
-    for tf_name, tf_key in [("Diarias", "daily"), ("Horarias (1h)", "hourly"), ("5 Minutos", "5min")]:
+    for tf_name, tf_key in [("Diarias", "daily"), ("Horarias (1h)", "hourly")]:
         group = [r for r in reports if r.timeframe == tf_key]
         if not group:
             continue

@@ -96,6 +96,16 @@ class MeanReversionRSI2Strategy:
             if val_rsi2 is None or val_rsi2 >= self.rsi_threshold:
                 continue  # Debe estar en sobreventa extrema (RSI(2) < 10)
 
+            # Filtro de volumen: confirmar pánico
+            # El volumen del día de la caída debe ser > 1.5x el promedio de los últimos 20 días
+            vol_series = df["volume"].astype(float)
+            if len(vol_series) >= 20:
+                avg_vol_20 = vol_series.rolling(20).mean().iloc[-1]
+                if vol_series.iloc[-1] <= (avg_vol_20 * 1.5):
+                    continue
+            else:
+                continue
+
             # Calcular ATR(14) para el stop loss
             high_series = df["high"].astype(float).copy()
             low_series = df["low"].astype(float).copy()
