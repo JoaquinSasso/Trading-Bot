@@ -1,6 +1,8 @@
 """Módulo de estrategias de trading algorítmico."""
 
 from tbot.strategies.interfaces import (
+    PositionAction,
+    PositionSnapshot,
     Signal,
     Strategy,
     StrategyContext,
@@ -25,6 +27,8 @@ from tbot.strategies.s10_antonacci_dual_momentum import AntonacciDualMomentumStr
 from tbot.strategies.s11_volatility_squeeze import VolatilitySqueezeStrategy
 
 __all__ = [
+    "PositionAction",
+    "PositionSnapshot",
     "Signal",
     "Strategy",
     "StrategyContext",

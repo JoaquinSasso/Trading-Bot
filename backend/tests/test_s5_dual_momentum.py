@@ -35,7 +35,7 @@ def _create_synthetic_bars(
 def test_s5_metadata_and_properties():
     strat = DualMomentumLeaderStrategy()
     assert strat.id == "dual_momentum_leader"
-    assert strat.version == "1.2.0"
+    assert strat.version == "1.3.0"
     assert strat.momentum_lookback_days == 45
     assert strat.trailing_ema_period == 25
     assert strat.top_n_leaders == 2
@@ -198,7 +198,9 @@ def test_s5_signal_structure_and_asymmetric_take_profit():
     # Regla clave de asimetría: Sin TP fijo para permitir captura de rallies
     assert sig.take_profit_price is None
     assert sig.exit_at_close is False
-    assert sig.max_holding == timedelta(days=30)
+    # v1.3: el límite de sesiones lo gestiona manage_positions (con renovación de líderes)
+    assert sig.max_holding == 0
+    assert sig.target_weight == 1.0  # peso fijo 1/top_n con top_n=1
     assert "momentum_60d" in sig.features
     assert "ema20" in sig.features
     assert sig.features["rank"] == 1

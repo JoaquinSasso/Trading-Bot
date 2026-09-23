@@ -1,7 +1,8 @@
 """Runner CLI para ejecución de backtests y generación de reportes Markdown.
 
 Uso:
-    python -m tbot.backtest.runner --strategy s1 --start 2020-01-01 --end 2022-12-31 --capital 2000
+    python -m tbot.backtest.runner --strategy s5 --start 2020-01-01 --end 2022-12-31 --capital 2000 \
+        --trial-ledger reports/trials.json
 """
 
 from __future__ import annotations
@@ -16,25 +17,26 @@ from pathlib import Path
 import pandas as pd
 
 from tbot.backtest.data_loader import HistoricalDataLoader
-from tbot.backtest.engine import ReplayEngine
+from tbot.backtest.engine import BacktestConfig, ReplayEngine
 from tbot.backtest.guards import assert_not_holdout
-from tbot.strategies.s1_intraday_momentum import IntradayMomentumStrategy
 from tbot.strategies.s2_mean_reversion_rsi2 import MeanReversionRSI2Strategy
 from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
-from tbot.strategies.s4_opening_range_breakout import OpeningRangeBreakoutStrategy
 from tbot.strategies.s5_dual_momentum_leader import DualMomentumLeaderStrategy
+from tbot.strategies.s9_turn_of_month_momentum import TurnOfMonthMomentumStrategy
+from tbot.strategies.s10_antonacci_dual_momentum import AntonacciDualMomentumStrategy
+from tbot.strategies.s11_volatility_squeeze import VolatilitySqueezeStrategy
 
+# S1 y S4 fueron retiradas del repositorio: el runner ya no las importa.
 STRATEGY_MAP = {
-    "s1": IntradayMomentumStrategy,
-    "intraday_momentum": IntradayMomentumStrategy,
     "s2": MeanReversionRSI2Strategy,
     "mean_reversion_rsi2": MeanReversionRSI2Strategy,
     "s3": TrendPullbackStrategy,
     "trend_pullback": TrendPullbackStrategy,
-    "s4": OpeningRangeBreakoutStrategy,
-    "opening_range_breakout": OpeningRangeBreakoutStrategy,
     "s5": DualMomentumLeaderStrategy,
     "dual_momentum_leader": DualMomentumLeaderStrategy,
+    "s9": TurnOfMonthMomentumStrategy,
+    "s10": AntonacciDualMomentumStrategy,
+    "s11": VolatilitySqueezeStrategy,
 }
 
 
@@ -46,8 +48,8 @@ def parse_args() -> argparse.Namespace:
         "--strategy",
         "-s",
         type=str,
-        default="s1",
-        help="Estrategia a evaluar (s1, s2, s3, s4, s5, o nombre completo).",
+        default="s5",
+        help="Estrategia a evaluar (s2, s3, s5, s9, s10, s11 o nombre completo).",
     )
     parser.add_argument(
         "--start",
@@ -65,7 +67,18 @@ def parse_args() -> argparse.Namespace:
         "--capital", type=float, default=2000.0, help="Capital inicial en USD (default 2000)."
     )
     parser.add_argument(
-        "--trials", type=int, default=5, help="Cantidad de combinaciones probadas para DSR."
+        "--trials", type=int, default=5, help="Cantidad mínima de combinaciones probadas para DSR."
+    )
+    parser.add_argument(
+        "--trial-ledger",
+        type=str,
+        default=None,
+        help="Ledger JSON de variantes probadas; el DSR usa max(--trials, variantes registradas).",
+    )
+    parser.add_argument(
+        "--allow-synthetic",
+        action="store_true",
+        help="Generar datos sintéticos si falta un CSV (solo para pruebas; nunca para decidir).",
     )
     parser.add_argument(
         "--data-dir",
@@ -139,6 +152,11 @@ def main() -> int:
             )
             daily_bars[sym] = df_d
         else:
+            if not args.allow_synthetic:
+                print(
+                    f"Error: falta {csv_file}. No se generan datos sintéticos salvo con --allow-synthetic."
+                )
+                return 1
             print(f"Generando histórico sintético para {sym} ({start_d} a {end_d})...")
             # Incluir 1 año previo para cálculo de medias móviles (SMA200)
             df_d, df_i = loader.generate_synthetic_history(
@@ -152,14 +170,19 @@ def main() -> int:
                 intraday_bars[sym] = df_i
 
     # Crear y ejecutar motor de replay
-    engine = ReplayEngine(
+    config = BacktestConfig(
         strategy=strategy,
+        initial_capital=Decimal(str(args.capital)),
+        num_tested_trials=args.trials,
+        trial_ledger_path=args.trial_ledger,
+        trial_family=strategy.id if args.trial_ledger else None,
+    )
+    engine = ReplayEngine(
+        config=config,
         historical_daily=daily_bars,
         historical_intraday=intraday_bars
         if strategy.data_requirements.needs_intraday_bars
         else None,
-        initial_capital=Decimal(str(args.capital)),
-        num_tested_trials=args.trials,
     )
 
     metrics, trades, equity_curve = engine.run(start_date=start_d, end_date=end_d)

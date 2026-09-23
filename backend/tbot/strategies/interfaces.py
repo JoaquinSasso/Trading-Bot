@@ -42,6 +42,8 @@ class Signal:
     exit_at_close: bool = False  # Para estrategias intradía
     score: float = 1.0  # 0.0 - 1.0
     features: dict[str, Any] = field(default_factory=dict)
+    # Peso objetivo sobre el equity (0-1). Si es None, el motor dimensiona por riesgo (risk_per_trade_pct).
+    target_weight: float | None = None
 
     @classmethod
     def create(
@@ -60,6 +62,7 @@ class Signal:
         exit_at_close: bool = False,
         score: float = 1.0,
         features: dict[str, Any] | None = None,
+        target_weight: float | None = None,
     ) -> Signal:
         """Constructor helper que autogenera el signal_id determinístico."""
         sig_id = compute_signal_id(strategy_id, version, symbol, bar_ts)
@@ -78,6 +81,7 @@ class Signal:
             exit_at_close=exit_at_close,
             score=score,
             features=features or {},
+            target_weight=target_weight,
         )
 
 
@@ -110,6 +114,38 @@ class StrategyContext:
     )  # symbol -> último precio conocido
     portfolio_positions: set[str] = field(default_factory=set)  # Símbolos ya abiertos
     parameters: dict[str, Any] = field(default_factory=dict)  # Parámetros custom de la estrategia
+    # Detalle de las posiciones abiertas (symbol -> PositionSnapshot). Lo completa el motor de backtest.
+    positions: dict[str, PositionSnapshot] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PositionSnapshot:
+    """Vista de solo lectura de una posición abierta, expuesta a la estrategia."""
+
+    symbol: str
+    qty: Decimal
+    entry_price: Decimal
+    entry_time: datetime
+    initial_stop: Decimal
+    current_stop: Decimal
+    bars_held: int
+    strategy_id: str
+
+
+@dataclass(frozen=True)
+class PositionAction:
+    """Acción de gestión sobre una posición abierta devuelta por `manage_positions`.
+
+    action:
+        - "exit": cerrar la posición al precio de ejecución del motor (cierre de la sesión).
+        - "update_stop": mover el stop a `new_stop` (solo se aplica si lo sube).
+        - "reset_holding": reiniciar el contador de sesiones mantenidas (renovación).
+    """
+
+    symbol: str
+    action: Literal["exit", "update_stop", "reset_holding"]
+    new_stop: Decimal | None = None
+    reason: str = ""
 
 
 @runtime_checkable
@@ -127,3 +163,10 @@ class Strategy(Protocol):
     def generate(self, ctx: StrategyContext) -> list[Signal]:
         """Evalúa las condiciones y genera la lista de señales deterministas."""
         ...
+
+    # Hooks opcionales (no forman parte del Protocol para no romper isinstance):
+    #   manage_positions(ctx) -> list[PositionAction]
+    #       Si existe, la estrategia es dueña de sus salidas y el motor NO aplica el overlay
+    #       genérico de EMA/max_holding. Los stops y take profits siguen activos en el broker.
+    #   prepare(daily_data: dict[str, pd.DataFrame]) -> None
+    #       Precálculo opcional de indicadores causales para acelerar el backtest.

@@ -10,7 +10,7 @@ Implementa:
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -69,6 +69,8 @@ class BacktestMetrics:
     # B-10 & B-08: Régimen de cuenta y error estándar de Sharpe
     account_type: str = "cash"
     sharpe_se: float | None = None
+    # Advertencias del motor sobre la validez del resultado (overlay genérico, DSR sin deflación, etc.)
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convierte las métricas a diccionario serializable."""
@@ -105,14 +107,18 @@ class BacktestMetrics:
 | **Profit Factor** | {self.profit_factor:.2f} | -- |
 | **Expectativa por Trade** | {self.expectancy_r:+.2f} R (${self.expectancy_usd:+,.2f}) | Expectativa > 0 |
 | **Max Drawdown** | {self.max_drawdown_pct:.2f}% (${self.max_drawdown_usd:,.2f}) | <= 15.00% |
-| **Duracion Max. Drawdown** | {self.max_drawdown_duration_days} dias | -- |
+| **Duracion Max. Drawdown** | {self.max_drawdown_duration_days} sesiones | -- |
 | **Sharpe Ratio Anualizado** | {sharpe_str} | Con tasa BIL descontada |
 | **Error Estandar Sharpe (SE)** | {se_str} | SE(S) asymptotic Lo (2002) |
 | **Deflated Sharpe (DSR)** | **{self.deflated_sharpe_ratio:.4f}** | **>= 0.9000** |
 | **Comisiones y Slippage** | ${self.total_fees_paid:,.2f} fees / ${self.total_slippage_cost:,.2f} slippage | Costos deducidos |
 
 *Observaciones de la puerta:* {reasons}
-"""
+""" + (
+            "\n**Advertencias del motor:**\n" + "\n".join(f"- {w}" for w in self.warnings) + "\n"
+            if self.warnings
+            else ""
+        )
 
 
 def calculate_deflated_sharpe_ratio(
@@ -369,8 +375,22 @@ def compute_backtest_metrics(
     min_dsr_threshold: float = 0.90,
     account_type: str = "cash",
     rf_series: pd.Series | None = None,
+    include_initial_capital: bool = False,
+    sortino_mode: str = "negative_std",
 ) -> BacktestMetrics:
-    """Calcula todas las métricas cuantitativas y evalúa la Puerta de Decisión de Fase 2."""
+    """Calcula todas las métricas cuantitativas y evalúa la Puerta de Decisión de Fase 2.
+
+    Args:
+        include_initial_capital: si es True, la curva se ancla en el capital inicial: el retorno
+            del primer día se mide contra él y el drawdown considera ese punto como pico inicial.
+        sortino_mode: "downside_deviation" (estándar: sqrt(mean(min(r,0)^2)) sobre todas las
+            observaciones) o "negative_std" (desvío de los retornos negativos; motor v2.2).
+    """
+    if include_initial_capital and not equity_curve.empty:
+        anchor_ts = equity_curve.index[0] - pd.Timedelta(days=1)
+        anchored = pd.concat([pd.Series([float(initial_capital)], index=[anchor_ts]), equity_curve.astype(float)])
+    else:
+        anchored = equity_curve
     if equity_curve.empty:
         start_date = "N/A"
         end_date = "N/A"
@@ -392,9 +412,9 @@ def compute_backtest_metrics(
     total_return_pct = (total_net_pnl / initial_capital) * 100.0 if initial_capital > 0 else 0.0
 
     # Drawdown
-    if not equity_curve.empty and len(equity_curve) > 1:
-        peak = equity_curve.cummax()
-        dd_series = equity_curve - peak
+    if not anchored.empty and len(anchored) > 1:
+        peak = anchored.cummax()
+        dd_series = anchored - peak
         dd_pct_series = (dd_series / peak) * 100.0
         max_dd_usd = abs(float(dd_series.min()))
         max_dd_pct = abs(float(dd_pct_series.min()))
@@ -412,8 +432,8 @@ def compute_backtest_metrics(
         max_dd_duration = 0
 
     # Retornos diarios para Sharpe y DSR
-    if len(equity_curve) > 1:
-        daily_returns = equity_curve.pct_change().dropna()
+    if len(anchored) > 1:
+        daily_returns = anchored.pct_change().dropna()
         n_days = len(daily_returns)
 
         # B-06: Obtener e integrar tasa libre de riesgo BIL
@@ -448,12 +468,16 @@ def compute_backtest_metrics(
                 else -100.0
             )
             sharpe_ratio = periodic_sharpe * math.sqrt(252.0)
-            downside_excess = excess_returns[excess_returns < 0]
-            sortino_ratio = (
-                (mean_excess / float(downside_excess.std(ddof=1)) * math.sqrt(252.0))
-                if len(downside_excess) > 1 and float(downside_excess.std(ddof=1)) > 1e-12
-                else 0.0
-            )
+            if sortino_mode == "downside_deviation":
+                dd_dev = float(np.sqrt(np.mean(np.minimum(excess_returns.to_numpy(dtype=float), 0.0) ** 2)))
+                sortino_ratio = (mean_excess / dd_dev * math.sqrt(252.0)) if dd_dev > 1e-12 else 0.0
+            else:
+                downside_excess = excess_returns[excess_returns < 0]
+                sortino_ratio = (
+                    (mean_excess / float(downside_excess.std(ddof=1)) * math.sqrt(252.0))
+                    if len(downside_excess) > 1 and float(downside_excess.std(ddof=1)) > 1e-12
+                    else 0.0
+                )
         else:
             cagr_pct = None
             sharpe_ratio = None

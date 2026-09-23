@@ -475,18 +475,26 @@ class TestCashYieldAccrualStability:
     def test_real_bil_series_accrual_fidelity(self):
         """Verify compounding against real BIL series over 2020-2022.
 
-        In 2020-2022, actual non-negative BIL compounded cash by +4.14%.
-        Engine should not accrue +13.69% due to 4.5% fallback override on 58.3% of zero/negative days.
+        Engine should not accrue +13.69% due to 4.5% fallback override on zero/negative days,
+        ni inflar el rendimiento recortando a 0 cada día negativo (ruido de precio de BIL):
+        la serie cruda de BIL se interpreta como retornos y la tasa del efectivo es su media
+        móvil de 21 sesiones previas con piso 0 (motor v2.3).
         """
         rf_full = load_risk_free_rate_bil()
         dates_sub = [d for d in rf_full.index if date(2020, 1, 2) <= d <= date(2022, 12, 30)]
 
-        # Calculate expected benchmark: sum of positive daily_rf
+        # Benchmark: tasa suavizada (media 21 sesiones previas, piso 0) compuesta día a día
+        rate = rf_full.sort_index().rolling(21, min_periods=5).mean().shift(1).clip(lower=0.0).fillna(0.0)
         expected_cash = 2000.0
+        for d in dates_sub:
+            expected_cash *= (1.0 + float(rate.get(d, 0.0)))
+        # Sesgo del recorte diario (motor v2.2) para documentar la diferencia
+        clipped_cash = 2000.0
         for d in dates_sub:
             r = rf_full.get(d, 0.0)
             if r > 0.0:
-                expected_cash *= (1.0 + r)
+                clipped_cash *= (1.0 + r)
+        assert clipped_cash - expected_cash > 20.0
 
         df_spy = _make_daily_df("SPY", dates_sub, [400.0] * len(dates_sub))
         config = BacktestConfig(
@@ -503,7 +511,7 @@ class TestCashYieldAccrualStability:
 
         # We assert that actual final equity matches real BIL within reasonable tolerance
         # rather than being inflated by +9.55% (over $190 on $2000).
-        assert abs(actual_final_equity - expected_cash) < 20.0, (
+        assert abs(actual_final_equity - expected_cash) < 1.0, (
             f"VULNERABILITY: Real BIL series accrued ${actual_final_equity:.2f} vs expected ${expected_cash:.2f}. "
             f"Discrepancy of ${actual_final_equity - expected_cash:.2f} due to fallback override on zero/neg days."
         )

@@ -178,12 +178,15 @@ def test_circuit_breaker_daily_pause_and_emergency_flatten():
     df_vol = pd.DataFrame(records_vol)
     df_vol.attrs["is_synthetic"] = True
 
-    strat = MockBuyStrategy(["VOL"], stop_pct=0.20)
+    # v2.3: los stops (órdenes en reposo) se evalúan antes que el cortacircuitos y el overlay de
+    # EMA sube el stop a ~96.5; para ejercitar el cortacircuitos se usa un stop lejano (60) y sin overlay.
+    strat = MockBuyStrategy(["VOL"], stop_pct=0.40)
     config = BacktestConfig(
         strategy=strat,
         initial_capital=Decimal("2000.00"),
-        risk_per_trade_pct=5.0,  # $100 de riesgo -> 5 acciones a $100 ($500 nocional)
+        risk_per_trade_pct=10.0,  # $200 de riesgo / $40 por acción -> 5 acciones a $100 ($500 nocional)
         single_position_cap=0.50,
+        exit_overlay="never",
         enable_circuit_breakers=True,
         daily_loss_limit_pct=2.0,
         emergency_loss_limit_pct=3.5,

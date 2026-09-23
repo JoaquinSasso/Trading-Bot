@@ -1,20 +1,39 @@
 """Broker simulado para backtesting y replay offline.
 
-Modela la ejecución realista de órdenes según las reglas del plan maestro:
-- Fills a mercado en apertura de la siguiente barra con slippage diferenciado (2 bps ETFs, 5 bps acciones).
-- Ejecución de stops al peor precio ante gaps nocturnos o intradiarios (max(open, stop) o min(open, stop)).
-- Fills de órdenes limit solo si el precio cruza el nivel.
-- Deducción precisa de tarifas regulatorias en ventas (SEC fee + FINRA TAF).
-- Seguimiento riguroso de efectivo, posiciones y trades cerrados con P&L en USD y en R.
+Modela la ejecución de órdenes con las fricciones de un broker retail (Alpaca):
+- Fills con slippage y medio spread diferenciados (ETFs vs acciones).
+- Stops ejecutados al peor precio ante gaps (min(open, stop)).
+- Orden de evaluación dentro de una barra: stop -> take profit -> salidas al cierre.
+- Tarifas regulatorias en ventas (SEC fee + FINRA TAF + CAT).
+- Liquidación T+N con calendario de sesiones (omite feriados si se provee el calendario).
+- Cuenta cash con modelo Reg T: se puede comprar con fondos no liquidados y se cuentan
+  las Good Faith Violations (GFV) si se vende antes de que esos fondos liquiden.
 """
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from tbot.strategies.interfaces import Signal
+
+# Conjunto histórico (motor v2.x) conservado para reproducir resultados previos (modo legacy).
+LEGACY_ETF_SYMBOLS: frozenset[str] = frozenset(
+    {"SPY", "QQQ", "IWM", "GLD", "SPYM", "QQQM", "GLDM", "TLT", "XLE", "XLV"}
+)
+
+# ETFs líquidos usados en los universos del proyecto (spread/slippage de ETF).
+DEFAULT_ETF_SYMBOLS: frozenset[str] = frozenset(
+    {
+        "SPY", "SPYM", "VOO", "IVV", "QQQ", "QQQM", "IWM", "DIA", "MTUM",
+        "GLD", "GLDM", "IAU", "SLV",
+        "TLT", "IEF", "SHY", "BIL", "SGOV", "TIP", "AGG", "BND", "LQD", "HYG",
+        "IEFA", "IEMG", "EFA", "EEM", "VEA", "VWO",
+        "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
+    }
+)
 
 
 @dataclass
@@ -41,6 +60,9 @@ class SimulatedPosition:
     bars_held: int = 0
     exit_at_close: bool = False
     fees_paid: Decimal = Decimal("0.0")
+    # Cuenta cash: fecha hasta la cual la compra quedó financiada con fondos no liquidados.
+    # Venderla antes de esa fecha constituye una Good Faith Violation (GFV).
+    unsettled_funding_until: date | None = None
 
 
 @dataclass
@@ -63,13 +85,18 @@ class SimulatedTrade:
     exit_reason: str
     initial_risk_usd: Decimal
     account_type: str = "cash"
+    gfv: bool = False
+
+
+def _to_date(value: date | datetime) -> date:
+    return value.date() if isinstance(value, datetime) else value
 
 
 class SimulatedBroker:
     """Simulador de broker para ejecución de órdenes en replay."""
 
-    # Slippage por defecto en bps (puntos básicos: 1 bps = 0.0001)
-    ETF_SYMBOLS = {"SPY", "QQQ", "IWM", "GLD", "SPYM", "QQQM", "GLDM", "TLT", "XLE", "XLV"}
+    # Conjunto de ETFs por defecto (spread y slippage de ETF). Ver DEFAULT_ETF_SYMBOLS.
+    ETF_SYMBOLS = DEFAULT_ETF_SYMBOLS
 
     def __init__(
         self,
@@ -85,6 +112,10 @@ class SimulatedBroker:
         stock_half_spread_bps: float = 0.0,
         cat_fee_per_share: Decimal = Decimal("0.00003"),
         integer_shares: bool = False,
+        etf_symbols: set[str] | frozenset[str] | None = None,
+        trading_days: list[date] | None = None,
+        cash_account_model: str = "settled_only",
+        legacy: bool = False,
     ) -> None:
         self.initial_capital = initial_capital
         self.account_type = account_type.lower()
@@ -102,11 +133,26 @@ class SimulatedBroker:
         self.max_finra_taf = max_finra_taf_per_order
         self.cat_fee_per_share = cat_fee_per_share
         self.integer_shares = integer_shares
+        self.etf_symbols: frozenset[str] = (
+            frozenset(s.upper() for s in etf_symbols) if etf_symbols is not None else self.ETF_SYMBOLS
+        )
+
+        # Calendario de sesiones para liquidación (omite feriados). Sin calendario: solo fines de semana.
+        self._trading_days: list[date] = sorted(set(trading_days)) if trading_days else []
+        # "gfv_aware": se puede comprar con fondos no liquidados (Reg T) y se cuentan las GFV.
+        # "settled_only": solo fondos liquidados (modelo conservador del motor v2.x).
+        if cash_account_model not in ("gfv_aware", "settled_only"):
+            raise ValueError(f"cash_account_model inválido: {cash_account_model!r}")
+        self.cash_account_model = cash_account_model
+        # Reproduce el comportamiento del motor v2.x (para validar equivalencia).
+        self.legacy = legacy
+        self.gfv_count = 0
 
         self.positions: dict[str, SimulatedPosition] = {}
         self.closed_trades: list[SimulatedTrade] = []
         self.trade_counter = 0
 
+    # ------------------------------------------------------------------ efectivo
     @property
     def cash(self) -> Decimal:
         """Efectivo total (liquidado + no liquidado)."""
@@ -122,16 +168,35 @@ class SimulatedBroker:
     def buying_power(self) -> Decimal:
         """Poder de compra disponible según el tipo de cuenta.
 
-        En cuenta Cash: solo fondos liquidados (settled cash) para prevenir Good Faith Violations (GFV).
-        En cuenta Margin: efectivo total (settled + unsettled).
+        Cash + "settled_only": solo fondos liquidados.
+        Cash + "gfv_aware": fondos liquidados + no liquidados (Reg T); las ventas prematuras
+        de lo comprado con fondos no liquidados se registran como GFV.
+        Margin (sin apalancamiento): efectivo total.
         """
-        if self.account_type == "cash":
+        if self.account_type == "cash" and self.cash_account_model == "settled_only":
             return max(Decimal("0.0"), self.settled_cash)
         return max(Decimal("0.0"), self.cash)
 
+    def set_trading_days(self, trading_days: list[date]) -> None:
+        """Define el calendario de sesiones usado para calcular la fecha de liquidación."""
+        self._trading_days = sorted(set(trading_days))
+
     def calculate_settlement_date(self, trade_date: date | datetime) -> date:
-        """Calcula la fecha de liquidación sumando días hábiles (omitiendo fines de semana)."""
-        d = trade_date.date() if isinstance(trade_date, datetime) else trade_date
+        """Fecha de liquidación: `settlement_days` sesiones hábiles después de la operación."""
+        d = _to_date(trade_date)
+        cal = self._trading_days
+        if cal and cal[0] <= d <= cal[-1]:
+            idx = bisect.bisect_right(cal, d) + self.settlement_days - 1
+            if idx < len(cal):
+                return cal[idx]
+            # Más allá del calendario conocido: continuar con días de semana.
+            extra = idx - (len(cal) - 1)
+            d = cal[-1]
+            while extra > 0:
+                d += timedelta(days=1)
+                if d.weekday() < 5:
+                    extra -= 1
+            return d
         added_days = 0
         while added_days < self.settlement_days:
             d += timedelta(days=1)
@@ -143,7 +208,7 @@ class SimulatedBroker:
         """Libera créditos no liquidados cuya fecha de liquidación haya llegado."""
         if not self._unsettled_credits:
             return
-        cur_d = current_date.date() if isinstance(current_date, datetime) else current_date
+        cur_d = _to_date(current_date)
         remaining: list[UnsettledCredit] = []
         for credit in self._unsettled_credits:
             if cur_d >= credit.settlement_date:
@@ -153,15 +218,40 @@ class SimulatedBroker:
                 remaining.append(credit)
         self._unsettled_credits = remaining
 
+    def _consume_unsettled(self, amount: Decimal) -> date | None:
+        """Descuenta `amount` de los créditos no liquidados (primero los que liquidan antes).
+
+        Devuelve la fecha de liquidación más tardía consumida (límite para evitar una GFV).
+        """
+        remaining = amount
+        latest: date | None = None
+        self._unsettled_credits.sort(key=lambda c: c.settlement_date)
+        kept: list[UnsettledCredit] = []
+        for credit in self._unsettled_credits:
+            if remaining > 0 and credit.amount > 0:
+                take = min(credit.amount, remaining)
+                credit.amount -= take
+                remaining -= take
+                self.unsettled_cash -= take
+                latest = credit.settlement_date if latest is None else max(latest, credit.settlement_date)
+            if credit.amount > 0:
+                kept.append(credit)
+        self._unsettled_credits = kept
+        if remaining > 0:
+            # No debería ocurrir (buying_power lo impide).
+            self.settled_cash -= remaining
+        return latest
+
+    # ------------------------------------------------------------------ costos
     def _get_slippage_rate(self, symbol: str) -> Decimal:
         """Determina la tasa de slippage según si el símbolo es un ETF o una acción."""
-        if symbol.upper() in self.ETF_SYMBOLS:
+        if symbol.upper() in self.etf_symbols:
             return self.etf_slippage
         return self.stock_slippage
 
     def _get_half_spread_rate(self, symbol: str) -> Decimal:
         """Determina la tasa de medio spread según si el símbolo es un ETF o una acción."""
-        if symbol.upper() in self.ETF_SYMBOLS:
+        if symbol.upper() in self.etf_symbols:
             return self.etf_half_spread
         return self.stock_half_spread
 
@@ -181,6 +271,7 @@ class SimulatedBroker:
             pos_value += pos.qty * price
         return self.cash + pos_value
 
+    # ------------------------------------------------------------------ órdenes
     def submit_buy(
         self,
         signal: Signal,
@@ -188,7 +279,11 @@ class SimulatedBroker:
         next_bar_open: Decimal,
         timestamp: datetime,
     ) -> SimulatedPosition | None:
-        """Ejecuta una orden de compra en la apertura de la barra siguiente con slippage y medio spread."""
+        """Ejecuta una compra al precio de referencia dado (`next_bar_open`) con slippage y medio spread.
+
+        El nombre del parámetro se conserva por compatibilidad: el motor pasa el precio de
+        ejecución que corresponda (cierre de la sesión o apertura de la siguiente).
+        """
         self.process_settlement(timestamp)
         available_funds = self.buying_power
 
@@ -204,15 +299,28 @@ class SimulatedBroker:
         fill_price = round(next_bar_open * (Decimal("1.0") + slippage_rate + half_spread_rate), 4)
         notional = qty * fill_price
 
-        # Comprobar poder de compra disponible (previene GFV en cuentas Cash)
+        # Comprobar poder de compra disponible
         if notional > available_funds:
-            # Ajustar cantidad al poder de compra disponible
             qty = Decimal(int(available_funds / fill_price))
             if qty <= 0:
                 return None
             notional = qty * fill_price
 
-        self.settled_cash -= notional
+        unsettled_until: date | None = None
+        if notional <= self.settled_cash:
+            self.settled_cash -= notional
+        else:
+            # Parte de la compra se financia con créditos no liquidados (gfv_aware o margin).
+            from_unsettled = notional - max(Decimal("0.0"), self.settled_cash)
+            self.settled_cash = min(self.settled_cash, Decimal("0.0"))
+            unsettled_until = self._consume_unsettled(from_unsettled)
+
+        if isinstance(signal.max_holding, int):
+            max_bars = signal.max_holding
+        elif isinstance(signal.max_holding, timedelta):
+            max_bars = int(signal.max_holding.total_seconds() // 3600)
+        else:
+            max_bars = 0
 
         pos = SimulatedPosition(
             symbol=signal.symbol,
@@ -224,11 +332,8 @@ class SimulatedBroker:
             take_profit=signal.take_profit_price,
             strategy_id=signal.strategy_id,
             exit_at_close=signal.exit_at_close,
-            max_holding_bars=(
-                signal.max_holding
-                if isinstance(signal.max_holding, int)
-                else (int(signal.max_holding.total_seconds() // 3600) if isinstance(signal.max_holding, timedelta) else 0)
-            ),
+            max_holding_bars=max_bars,
+            unsettled_funding_until=unsettled_until if self.account_type == "cash" else None,
         )
         self.positions[signal.symbol] = pos
         return pos
@@ -246,6 +351,14 @@ class SimulatedBroker:
         pos = self.positions.pop(symbol, None)
         if pos is None:
             return None
+
+        is_gfv = bool(
+            self.account_type == "cash"
+            and pos.unsettled_funding_until is not None
+            and _to_date(timestamp) < pos.unsettled_funding_until
+        )
+        if is_gfv:
+            self.gfv_count += 1
 
         slippage_rate = self._get_slippage_rate(symbol)
         half_spread_rate = self._get_half_spread_rate(symbol)
@@ -298,6 +411,7 @@ class SimulatedBroker:
             exit_reason=reason,
             initial_risk_usd=round(initial_risk_total, 4),
             account_type=self.account_type,
+            gfv=is_gfv,
         )
         self.closed_trades.append(trade)
         return trade
@@ -311,8 +425,13 @@ class SimulatedBroker:
         bar_close: Decimal,
         timestamp: datetime,
         is_market_close: bool = False,
+        enforce_max_holding: bool = False,
     ) -> SimulatedTrade | None:
-        """Evalúa si la barra activa el Stop Loss, Take Profit o salida forzada de cierre."""
+        """Evalúa si la barra activa el Stop Loss, el Take Profit o una salida al cierre.
+
+        Orden: órdenes en reposo primero (stop, luego take profit) y después las salidas al
+        cierre (exit_at_close y, si `enforce_max_holding`, el límite de barras mantenidas).
+        """
         self.process_settlement(timestamp)
         pos = self.positions.get(symbol)
         if pos is None:
@@ -320,13 +439,12 @@ class SimulatedBroker:
 
         pos.bars_held += 1
 
-        # 1. Salida obligatoria al cierre para estrategias intradía (exit_at_close)
-        if pos.exit_at_close and is_market_close:
+        # Compatibilidad v2.x: exit_at_close se evaluaba ANTES que el stop (ignoraba stops intradía).
+        if self.legacy and pos.exit_at_close and is_market_close:
             return self.close_position(symbol, bar_close, timestamp, reason="exit_at_close")
 
-        # 2. Evaluación de Stop Loss (con modelado de gaps)
+        # 1. Stop Loss (con modelado de gaps)
         if bar_low <= pos.current_stop:
-            # Si la barra abre con gap por debajo del stop, el fill es en open (peor caso)
             if bar_open <= pos.current_stop:
                 exit_price = bar_open
                 is_gap = True
@@ -337,10 +455,20 @@ class SimulatedBroker:
                 symbol, exit_price, timestamp, reason="stop_loss", is_gap=is_gap
             )
 
-        # 3. Evaluación de Take Profit (si está definido)
+        # 2. Take Profit (si está definido)
         if pos.take_profit is not None and bar_high >= pos.take_profit:
-            # Si abre por encima del TP (gap favorable), el fill es en open
             exit_price = bar_open if bar_open >= pos.take_profit else pos.take_profit
             return self.close_position(symbol, exit_price, timestamp, reason="take_profit")
+
+        # 3. Salidas al cierre
+        if is_market_close and pos.exit_at_close:
+            return self.close_position(symbol, bar_close, timestamp, reason="exit_at_close")
+        if (
+            enforce_max_holding
+            and is_market_close
+            and pos.max_holding_bars > 0
+            and pos.bars_held >= pos.max_holding_bars
+        ):
+            return self.close_position(symbol, bar_close, timestamp, reason="max_holding")
 
         return None

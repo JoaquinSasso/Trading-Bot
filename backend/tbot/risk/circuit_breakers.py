@@ -92,6 +92,15 @@ class CircuitBreakerManager:
         else:
             self._consecutive_losses = 0
 
+    @property
+    def consecutive_losses(self) -> int:
+        """Cantidad actual de operaciones perdedoras consecutivas."""
+        return self._consecutive_losses
+
+    def reset_consecutive_losses(self) -> None:
+        """Reinicia la racha de pérdidas (p.ej. tras cumplir el enfriamiento de la pausa)."""
+        self._consecutive_losses = 0
+
     def can_open_new_positions(self) -> bool:
         """Indica si el sistema tiene permitido enviar órdenes de compra."""
         return self._state == CircuitBreakerState.NORMAL and not self._is_manually_paused
