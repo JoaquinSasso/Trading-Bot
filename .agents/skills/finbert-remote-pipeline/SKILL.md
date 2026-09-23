@@ -1,62 +1,120 @@
 ---
 name: finbert-remote-pipeline
 description: >-
-  Guía y procedimiento para ejecutar la ingesta multi-fuente de noticias (SEC EDGAR, Yahoo RSS, Alpaca),
-  la inferencia con FinBERT en la PC de escritorio remota (JOAPC) y la evaluación del benchmark de portafolio.
+  Guía y procedimiento para ejecutar tareas computacionalmente pesadas (ingesta de noticias + FinBERT,
+  backtesting completo de portafolio) delegándolas a la PC de escritorio remota (JOAPC / 192.168.0.108)
+  cuando está disponible, con fallback automático a ejecución local.
 ---
 
-# Pipeline Multi-Fuente de Noticias y FinBERT en PC Remota (JOAPC)
+# Ejecución de Tareas Pesadas en JOAPC (FinBERT + Backtesting)
 
-Este skill describe el procedimiento estándar para recopilar noticias, procesar sentimientos con FinBERT en la PC de escritorio potente y actualizar las señales cuantitativas del bot de trading.
+## Routing: ¿Remoto o Local?
 
-## 1. Verificación de Conectividad con JOAPC
+| Criterio | Decisión |
+|---|---|
+| Tarea estimada en < ~2 minutos | **Ejecutar local** |
+| Tarea estimada en > 2 minutos | **Intentar JOAPC primero → fallback local** |
+| JOAPC no responde al check SSH | **Ejecutar local directamente** |
 
-Verificar que la estación remota (`192.168.0.108`) responde por SSH (utilizar siempre `-n`):
+Scripts que van a JOAPC: `extract_and_process_historical_news.py`, `optimize_and_benchmark_portfolio.py`, `run_hourly_backtests.py`, `run_final_holdout_evaluation.py`, `run_phase2_institutional_metrics.py`, `run_multifactor_attribution.py`, `recompute_dsr_and_pbo.py`.
+
+Scripts que siempre se ejecutan local: `pytest`, `recompute_rank_monotonicity_newey_west.py`, análisis exploratorios rápidos.
+
+---
+
+## Paso 1 — Verificar Conectividad
 
 ```powershell
-ssh -n 192.168.0.108 "echo JOAPC Connected"
+ssh -n -o ConnectTimeout=5 -o BatchMode=yes 192.168.0.108 "echo JOAPC_OK"
 ```
 
-## 2. Sincronización de Código Hacia JOAPC
+- `JOAPC_OK` → continuar.
+- Falla → **saltar al Paso 4 (Fallback Local)**.
 
-Transferir los scripts y módulos actualizados:
+---
+
+## Paso 2 — Sincronizar Código Hacia JOAPC (scp)
+
+> [!NOTE]
+> Los datos en `data/` (+1.2 GB) se sincronizan automáticamente por Syncthing. `scp` solo transfiere el código.
 
 ```powershell
-scp scripts/extract_and_process_historical_news.py "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
 scp -r backend "192.168.0.108:D:/Github Repositories/Trading-Bot/"
+scp scripts/extract_and_process_historical_news.py "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
+scp scripts/optimize_and_benchmark_portfolio.py    "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
+scp scripts/run_hourly_backtests.py                "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
+scp scripts/run_final_holdout_evaluation.py        "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
+scp scripts/run_phase2_institutional_metrics.py    "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
+scp scripts/run_multifactor_attribution.py         "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
+scp scripts/recompute_dsr_and_pbo.py               "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
 ```
 
-## 3. Ejecución del Pipeline de Noticias y FinBERT en JOAPC
-
-Lanzar la extracción multi-fuente (SEC EDGAR Form 8-K + Yahoo RSS + Cables sectoriales) e inferencia en batch:
+**Forzar rescan de Syncthing en JOAPC antes de ejecutar** (API Key en `http://127.0.0.1:8384` → Actions → Settings):
 
 ```powershell
+ssh -n 192.168.0.108 powershell -NoProfile -Command `
+    "Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8384/rest/db/scan?folder=trading-data' -Headers @{'X-API-Key'='API_KEY_DE_JOAPC'}"
+```
+
+---
+
+## Paso 3 — Ejecutar en JOAPC
+
+> [!NOTE]
+> Usar siempre `ssh -n` para evitar que OpenSSH de Windows quede colgado esperando EOF.
+
+```powershell
+# FinBERT / ingesta de noticias
 ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/extract_and_process_historical_news.py --symbols SPY,QQQ,AAPL,MSFT,NVDA,AMZN,META,GOOGL,JPM,LLY,XOM,COST,GLD,SLV --device cpu --batch-size 32"
+
+# Benchmark completo de portafolio
+ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/optimize_and_benchmark_portfolio.py"
+
+# Backtests horarios S6 / S8
+ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/run_hourly_backtests.py"
+
+# Evaluación holdout final
+ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/run_final_holdout_evaluation.py"
+
+# Métricas institucionales Fase 2
+ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/run_phase2_institutional_metrics.py"
+
+# Atribución multifactor
+ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/run_multifactor_attribution.py"
+
+# Recalcular DSR y PBO
+ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/recompute_dsr_and_pbo.py"
 ```
 
-*Nota: Monitorear el progreso. En el procesador Ryzen 7 8700G, el procesamiento de ~7.500 observaciones toma aproximadamente 1 a 2 minutos.*
+---
 
-## 4. Sincronización de Datasets de Vuelta a la Máquina Local
+## Paso 3b — Traer Reports a Local
 
-Traer las características cuantitativas generadas y la caché de noticias crudas:
+Los datos en `data/` llegan solos vía Syncthing. Solo hace falta traer los reports:
 
 ```powershell
-scp "192.168.0.108:D:/Github Repositories/Trading-Bot/data/news_features/historical_news_features.csv" data/news_features/
-scp -r "192.168.0.108:D:/Github Repositories/Trading-Bot/data/news/raw" data/news/
+scp -r "192.168.0.108:D:/Github Repositories/Trading-Bot/reports" .
 ```
 
-## 5. Validación y Ejecución de Simulación / Benchmark
+**Forzar rescan en local para recibir los datos actualizados:**
 
-1. Validar que la suite de tests pasa al 100%:
-   ```powershell
-   python -m pytest backend/tests/ -q
-   ```
-2. Ejecutar la simulación completa del portafolio:
-   ```powershell
-   python scripts/optimize_and_benchmark_portfolio.py
-   ```
-3. Verificar que la estrategia **S5 v1.2.0 (Multi-Sectorial + Metales)** mantiene sus métricas objetivo:
-   - Retorno Anual > +75%
-   - Sharpe Ratio > 2.50
-   - Max Drawdown < -10%
-   - Alpha sobre S&P 500 > +50%
+```powershell
+Invoke-RestMethod -Method Post `
+    -Uri "http://127.0.0.1:8384/rest/db/scan?folder=trading-data" `
+    -Headers @{ "X-API-Key" = "TU_API_KEY_LOCAL" }
+```
+
+---
+
+## Paso 4 — Fallback: Ejecución Local (JOAPC no disponible)
+
+```powershell
+# FinBERT local (batch-size reducido si RAM limitada)
+python scripts/extract_and_process_historical_news.py --symbols SPY,QQQ,AAPL,MSFT,NVDA,AMZN,META,GOOGL,JPM,LLY,XOM,COST,GLD,SLV --device cpu --batch-size 16
+
+# Backtest local
+python scripts/optimize_and_benchmark_portfolio.py
+python scripts/run_hourly_backtests.py
+python scripts/run_final_holdout_evaluation.py
+python scripts/run_phase2_institutional_metrics.py
+```
