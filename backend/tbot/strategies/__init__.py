@@ -20,6 +20,9 @@ from tbot.strategies.s8_pid_multihorizon import (
     S8ScoreResult,
     score_universe_s8,
 )
+from tbot.strategies.s9_turn_of_month_momentum import TurnOfMonthMomentumStrategy
+from tbot.strategies.s10_antonacci_dual_momentum import AntonacciDualMomentumStrategy
+from tbot.strategies.s11_volatility_squeeze import VolatilitySqueezeStrategy
 
 __all__ = [
     "Signal",
@@ -36,4 +39,7 @@ __all__ = [
     "S8ScoreResult",
     "score_universe_s8",
     "S8PIDMultihorizonStrategy",
+    "TurnOfMonthMomentumStrategy",
+    "AntonacciDualMomentumStrategy",
+    "VolatilitySqueezeStrategy",
 ]

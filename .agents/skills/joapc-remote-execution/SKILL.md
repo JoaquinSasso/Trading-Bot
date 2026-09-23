@@ -1,12 +1,11 @@
 ---
-name: finbert-remote-pipeline
+name: joapc-remote-execution
 description: >-
-  Guía y procedimiento para ejecutar tareas computacionalmente pesadas (ingesta de noticias + FinBERT,
-  backtesting completo de portafolio) delegándolas a la PC de escritorio remota (JOAPC / 192.168.0.108)
-  cuando está disponible, con fallback automático a ejecución local.
+  Procedimiento para delegar tareas de backtesting computacionalmente pesadas a la PC de escritorio
+  remota (JOAPC / 192.168.0.108) cuando está disponible, con fallback automático a ejecución local.
 ---
 
-# Ejecución de Tareas Pesadas en JOAPC (FinBERT + Backtesting)
+# Ejecución de Backtesting Pesado en JOAPC
 
 ## Routing: ¿Remoto o Local?
 
@@ -16,7 +15,7 @@ description: >-
 | Tarea estimada en > 2 minutos | **Intentar JOAPC primero → fallback local** |
 | JOAPC no responde al check SSH | **Ejecutar local directamente** |
 
-Scripts que van a JOAPC: `extract_and_process_historical_news.py`, `optimize_and_benchmark_portfolio.py`, `run_hourly_backtests.py`, `run_final_holdout_evaluation.py`, `run_phase2_institutional_metrics.py`, `run_multifactor_attribution.py`, `recompute_dsr_and_pbo.py`.
+Scripts que van a JOAPC: `optimize_and_benchmark_portfolio.py`, `run_hourly_backtests.py`, `run_final_holdout_evaluation.py`, `run_phase2_institutional_metrics.py`, `run_multifactor_attribution.py`, `recompute_dsr_and_pbo.py`.
 
 Scripts que siempre se ejecutan local: `pytest`, `recompute_rank_monotonicity_newey_west.py`, análisis exploratorios rápidos.
 
@@ -40,7 +39,6 @@ ssh -n -o ConnectTimeout=5 -o BatchMode=yes 192.168.0.108 "echo JOAPC_OK"
 
 ```powershell
 scp -r backend "192.168.0.108:D:/Github Repositories/Trading-Bot/"
-scp scripts/extract_and_process_historical_news.py "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
 scp scripts/optimize_and_benchmark_portfolio.py    "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
 scp scripts/run_hourly_backtests.py                "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
 scp scripts/run_final_holdout_evaluation.py        "192.168.0.108:D:/Github Repositories/Trading-Bot/scripts/"
@@ -64,9 +62,6 @@ ssh -n 192.168.0.108 powershell -NoProfile -Command `
 > Usar siempre `ssh -n` para evitar que OpenSSH de Windows quede colgado esperando EOF.
 
 ```powershell
-# FinBERT / ingesta de noticias
-ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/extract_and_process_historical_news.py --symbols SPY,QQQ,AAPL,MSFT,NVDA,AMZN,META,GOOGL,JPM,LLY,XOM,COST,GLD,SLV --device cpu --batch-size 32"
-
 # Benchmark completo de portafolio
 ssh -n 192.168.0.108 powershell -NoProfile -Command "Set-Location 'D:\Github Repositories\Trading-Bot'; python scripts/optimize_and_benchmark_portfolio.py"
 
@@ -109,10 +104,6 @@ Invoke-RestMethod -Method Post `
 ## Paso 4 — Fallback: Ejecución Local (JOAPC no disponible)
 
 ```powershell
-# FinBERT local (batch-size reducido si RAM limitada)
-python scripts/extract_and_process_historical_news.py --symbols SPY,QQQ,AAPL,MSFT,NVDA,AMZN,META,GOOGL,JPM,LLY,XOM,COST,GLD,SLV --device cpu --batch-size 16
-
-# Backtest local
 python scripts/optimize_and_benchmark_portfolio.py
 python scripts/run_hourly_backtests.py
 python scripts/run_final_holdout_evaluation.py

@@ -52,6 +52,9 @@ from tbot.strategies import (
     S7PIDScorerStrategy,
     S8PIDMultihorizonStrategy,
     TrendPullbackStrategy,
+    TurnOfMonthMomentumStrategy,
+    AntonacciDualMomentumStrategy,
+    VolatilitySqueezeStrategy,
 )
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -635,6 +638,114 @@ def main():
             start_date=DAILY_START, end_date=DAILY_END, error=str(e),
         ))
 
+    # ── S9: Turn of Month Momentum ──────────────────────────────────
+    print("\n▶ S9 — Turn of Month Momentum [Universo A, Diario]")
+    try:
+        strat_s9 = TurnOfMonthMomentumStrategy(top_n_leaders=2)
+        result_s9 = run_strategy_backtest(
+            strategy=strat_s9,
+            daily_data=daily_data_ua,
+            intraday_data=None,
+            universe=UA_TRADEABLE,
+            start=DAILY_START, end=DAILY_END,
+            resolution="daily", rf_series=rf_series,
+        )
+        spy_eq_s9 = compute_spy_buy_hold(spy_ua, DAILY_START, DAILY_END, float(INITIAL_CAPITAL))
+        chart_path_s9 = CHARTS_DIR / "s9_turn_of_month.png"
+        plot_equity_comparison(result_s9.equity_curve, spy_eq_s9, "S9 — Turn of Month Momentum", chart_path_s9)
+        reports.append(StrategyReport(
+            name="S9 — Turn of Month Momentum",
+            short_name="S9",
+            description="Momentum a 45 días operando solo los últimos 3 y primeros 3 días del mes (Filtro Estacional).",
+            timeframe="daily",
+            start_date=DAILY_START, end_date=DAILY_END,
+            metrics=result_s9.metrics,
+            equity_curve=result_s9.equity_curve,
+            spy_equity=spy_eq_s9,
+            chart_path=str(chart_path_s9.relative_to(REPORTS_DIR)),
+            total_trades=result_s9.metrics.total_trades,
+        ))
+        print(f"   ✅ Completado: {result_s9.metrics.total_trades} trades, Retorno: {result_s9.metrics.total_return_pct:.2f}%")
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        reports.append(StrategyReport(
+            name="S9 — Turn of Month Momentum", short_name="S9",
+            description="Error durante ejecución.", timeframe="daily",
+            start_date=DAILY_START, end_date=DAILY_END, error=str(e),
+        ))
+
+    # ── S10: Antonacci Dual Momentum ──────────────────────────────────
+    print("\n▶ S10 — Antonacci Dual Momentum [Universo A, Diario]")
+    try:
+        strat_s10 = AntonacciDualMomentumStrategy(top_n_leaders=1)
+        result_s10 = run_strategy_backtest(
+            strategy=strat_s10,
+            daily_data=daily_data_ua,
+            intraday_data=None,
+            universe=UA_TRADEABLE,
+            start=DAILY_START, end=DAILY_END,
+            resolution="daily", rf_series=rf_series,
+        )
+        spy_eq_s10 = compute_spy_buy_hold(spy_ua, DAILY_START, DAILY_END, float(INITIAL_CAPITAL))
+        chart_path_s10 = CHARTS_DIR / "s10_antonacci.png"
+        plot_equity_comparison(result_s10.equity_curve, spy_eq_s10, "S10 — Antonacci Dual Momentum", chart_path_s10)
+        reports.append(StrategyReport(
+            name="S10 — Antonacci Dual Momentum",
+            short_name="S10",
+            description="Dual Momentum Absoluto a 12 meses. Compara Universo A contra IEF como activo seguro.",
+            timeframe="daily",
+            start_date=DAILY_START, end_date=DAILY_END,
+            metrics=result_s10.metrics,
+            equity_curve=result_s10.equity_curve,
+            spy_equity=spy_eq_s10,
+            chart_path=str(chart_path_s10.relative_to(REPORTS_DIR)),
+            total_trades=result_s10.metrics.total_trades,
+        ))
+        print(f"   ✅ Completado: {result_s10.metrics.total_trades} trades, Retorno: {result_s10.metrics.total_return_pct:.2f}%")
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        reports.append(StrategyReport(
+            name="S10 — Antonacci Dual Momentum", short_name="S10",
+            description="Error durante ejecución.", timeframe="daily",
+            start_date=DAILY_START, end_date=DAILY_END, error=str(e),
+        ))
+
+    # ── S11: Volatility Squeeze ───────────────────────────────────────
+    print("\n▶ S11 — Volatility Squeeze [Universo A, Diario]")
+    try:
+        strat_s11 = VolatilitySqueezeStrategy()
+        result_s11 = run_strategy_backtest(
+            strategy=strat_s11,
+            daily_data=daily_data_ua,
+            intraday_data=None,
+            universe=UA_TRADEABLE,
+            start=DAILY_START, end=DAILY_END,
+            resolution="daily", rf_series=rf_series,
+        )
+        spy_eq_s11 = compute_spy_buy_hold(spy_ua, DAILY_START, DAILY_END, float(INITIAL_CAPITAL))
+        chart_path_s11 = CHARTS_DIR / "s11_squeeze.png"
+        plot_equity_comparison(result_s11.equity_curve, spy_eq_s11, "S11 — Volatility Squeeze", chart_path_s11)
+        reports.append(StrategyReport(
+            name="S11 — Volatility Squeeze",
+            short_name="S11",
+            description="Ruptura de compresión de volatilidad (Bollinger Bands dentro de Keltner Channels).",
+            timeframe="daily",
+            start_date=DAILY_START, end_date=DAILY_END,
+            metrics=result_s11.metrics,
+            equity_curve=result_s11.equity_curve,
+            spy_equity=spy_eq_s11,
+            chart_path=str(chart_path_s11.relative_to(REPORTS_DIR)),
+            total_trades=result_s11.metrics.total_trades,
+        ))
+        print(f"   ✅ Completado: {result_s11.metrics.total_trades} trades, Retorno: {result_s11.metrics.total_return_pct:.2f}%")
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        reports.append(StrategyReport(
+            name="S11 — Volatility Squeeze", short_name="S11",
+            description="Error durante ejecución.", timeframe="daily",
+            start_date=DAILY_START, end_date=DAILY_END, error=str(e),
+        ))
+
     # ─────────────────────────────────────────────────────────────────────
     # GRUPO 2: ESTRATEGIAS DE 1 HORA (ventana 2023-10-23 a 2025-09-21)
     # ─────────────────────────────────────────────────────────────────────
@@ -980,108 +1091,7 @@ def generate_markdown_report(reports: list[StrategyReport]) -> str:
                 lines.append(f"![Comparativa {tf_name}](charts/comparativa_{tf_key}.png)\n")
             lines.append("---\n")
 
-    # ────────────────────────────────────────────────────────────
-    # Sección: Investigación y Recomendaciones
-    # ────────────────────────────────────────────────────────────
-    lines.append("## 🔬 Análisis de Estrategias y Recomendaciones\n")
-    lines.append("### ¿Qué estrategias deberíamos descartar?\n")
-    lines.append("""
-Basándose en la teoría financiera y los resultados observados:
 
-1. **S1 (Intraday Momentum de 28 minutos):** Esta estrategia explota una anomalía muy estudiada
-   (que la primera media hora predice la última). La evidencia académica sugiere que esta anomalía
-   ha disminuido significativamente desde que fue publicada. Además, con solo 28 minutos de exposición
-   por día, las comisiones y el deslizamiento de precios pueden consumir fácilmente las ganancias
-   en una cuenta pequeña (\\$2,000). **Recomendación: Descartar o usar solo como complemento
-   con capital mayor.**
-
-2. **S4 (Opening Range Breakout):** Las rupturas de rango de apertura son una de las estrategias
-   más antiguas y más «abarrotadas» del mercado. Demasiados traders las usan, lo que reduce su
-   efectividad. Con capital de \\$2,000, las comisiones hacen muy difícil ser rentable.
-   **Recomendación: Mantener en monitoreo, pero no priorizar.**
-
-### ¿Qué estrategias tienen potencial de mejora?\n
-
-1. **S5 (Dual Momentum Leader):** Es la estrategia principal y la más robusta teóricamente.
-   El momentum es una de las anomalías más documentadas y persistentes en las finanzas.
-   **Mejoras posibles sin sobreajuste:**
-   - *Para el usuario:* Probar con diferentes periodos de momentum (30, 45, 60 días) y verificar
-     que los resultados no sean sensibles a cambios pequeños. Si lo son, hay riesgo de sobreajuste.
-   - *Técnico:* Implementar volatility scaling (ajustar tamaño de posición según la volatilidad
-     reciente de cada activo) usando la inversa de la volatilidad a 60 días como ponderador.
-
-2. **S7 (PID Scorer):** El concepto de sistema de control dual es innovador, pero su complejidad
-   puede esconder sobreajuste.
-   - *Para el usuario:* Simplificar puede ser mejor que complicar. Si S7 no supera a S5 de forma
-     consistente, la complejidad extra no se justifica.
-   - *Técnico:* Reducir el número de features del Sistema D de 5 a 3 (los más independientes) para
-     reducir dimensionalidad y riesgo de sobreajuste.
-
-3. **S2 (Mean Reversion RSI-2):** Estrategia clásica con fuerte base teórica (Connors Research).
-   - *Para el usuario:* Funciona mejor como complemento de S5, ya que opera en condiciones de
-     mercado opuestas (compra caídas vs. compra ganadores).
-   - *Técnico:* Agregar un filtro de volumen (comprar solo si el volumen del día de la caída
-     es > 1.5x el promedio de 20 días) para mejorar la calidad de las señales.
-
-### ¿Qué estrategias nuevas podríamos probar?\n
-
-#### Para el usuario (explicación simple):
-
-1. **Momentum + Estacionalidad (Turn-of-Month):** Históricamente, los últimos 3 días del mes y
-   los primeros 3 del siguiente tienden a ser positivos. Combinar esto con nuestro filtro de momentum
-   podría mejorar el timing de entradas.
-
-2. **Momentum Relativo entre Activos y Bonos (Dual Momentum de Antonacci):** En lugar de solo
-   comparar acciones entre sí, comparar el retorno de las mejores acciones vs. bonos del Tesoro.
-   Solo comprar acciones si superan a los bonos; si no, quedarse en bonos. Ya tenemos datos de IEF
-   y TIP en Universo A para esto.
-
-3. **Carry + Momentum:** Combinar el momentum de precios con el «carry» (rendimiento que genera
-   mantener el activo). Para ETFs de bonos como TIP o IEF, el carry es el cupón; para acciones,
-   el dividend yield.
-
-#### Parte técnica (para implementación):
-
-1. **Turn-of-Month Effect (Lakonishok & Smidt, 1988; Ariel, 1990):**
-   ```
-   Regla: Solo abrir posiciones de S5 en los últimos 3 + primeros 3 días de cada mes.
-   Lógica: if (day_of_month >= last_biz_day - 2) or (day_of_month <= 3): allow_entry = True
-   Validación: Comparar Sharpe con y sin este filtro en la ventana 2018-2022.
-   ```
-
-2. **Gary Antonacci's Dual Momentum (2014):**
-   ```
-   Paso 1: Calcular retorno 12 meses de cada ETF del Universo A.
-   Paso 2: Calcular retorno 12 meses de BIL (benchmark libre de riesgo).
-   Paso 3: Si el mejor ETF supera a BIL → comprar ese ETF.
-            Si no → quedarse 100% en BIL/IEF.
-   Diferencia con S5: Usa lookback de 12 meses (252d) vs. 45d de S5.
-   ```
-
-3. **Risk Parity Simplificado (All-Weather de Dalio simplificado):**
-   ```
-   Asignación: Ponderar cada activo del Universo A por 1/volatilidad(60d).
-   Rebalanceo: Mensual.
-   Ya tenemos: vol_control en BacktestEngine (target_portfolio_vol=0.12).
-   Mejora: En lugar de ranking de momentum, simplemente invertir σ.
-   ```
-
-4. **Carry Factor (Koijen et al., 2018):**
-   ```
-   Para bonos (IEF, TIP): carry = yield_actual - yield_hace_3_meses
-   Para acciones/ETFs: carry = dividend_yield
-   Combinar: score_final = 0.5 * z_momentum + 0.5 * z_carry
-   Datos necesarios: Dividendos históricos (disponibles via yfinance).
-   ```
-
-5. **Breakout de Volatilidad (Keltner Channel / Squeeze):**
-   ```
-   Detectar "squeeze" cuando Bollinger Bands están dentro de Keltner Channels.
-   Comprar al primer breakout alcista post-squeeze.
-   Indicadores: Ya tenemos ATR; solo falta añadir Bollinger Bands.
-   Ventaja: No correlacionado con momentum puro.
-   ```
-""")
 
     return "\n".join(lines)
 

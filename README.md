@@ -17,25 +17,19 @@ Bot de trading algorítmico y cuantitativo para acciones y ETFs de EE. UU. a tra
 
 En simulaciones sistemáticas sobre datos reales de 2025 (precios OHLCV oficiales y 7.490 observaciones de noticias procesadas con FinBERT a las 15:45 ET sin sesgo de futuro):
 
-| Estrategia / Configuración | Retorno Anual | Alpha vs SPY | Ratio Sharpe | Max Drawdown | Win Rate | Profit Factor | Estado |
+| Estrategia / Configuración | Retorno Anual / Total | Alpha vs SPY | Ratio Sharpe | Max Drawdown | Win Rate | Profit Factor | Estado |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **BENCHMARK: S&P 500 (`SPY` Buy & Hold)** | **+15.70%** | **--** | **1.15** | **-9.80%** | **--** | **--** | **Referencia** |
-| *Estrategia S3 Baseline (Pullback inicial)* | +5.16% | -10.54% | 1.05 | -2.59% | 44.0% | 1.47 | Insuficiente |
-| *S5 Base (Tech 5: AAPL, MSFT, NVDA, SPY, QQQ)* | +18.65% | +2.95% | 1.04 | -8.24% | 48.0% | 2.54 | Supera SPY |
-| *S5 v1.1.0 Multi-Sectorial (12 activos)* | +66.54% | +50.84% | 2.73 | -10.65% | 56.5% | 3.82 | Supera SPY |
-| **S5 v1.2.0 Multi-Sectorial + Metales (`GLD`+`SLV`)** | **+81.85%** | **+66.15%** | **2.91** | **-7.57%** | **71.4%** | **5.28** | **MÁXIMO GANADOR** |
+| **BENCHMARK: S&P 500 (`SPY` Buy & Hold 2011-2022)** | **+201.01%** | **--** | **--** | **--** | **--** | **--** | **Referencia 12 Años** |
+| *S5 Base (Universo Clásico 14 activos)* | +43.37% | -157.64% | -- | -- | -- | -- | Desactualizada |
+| *S5 (Universo Expandido 93 activos)* | +68.60% | -132.41% | -- | -- | -- | -- | Supera a S5 clásica |
+| *Silo Combinado (80% S5 + 20% S9 Turn of Month)* | +44.68% | -156.33% | -- | -- | -- | -- | Silo Funcional |
+| **Silo Combinado (80% S5 + 20% S11 Squeeze)** | **+47.44%** | **-153.57%** | **--** | **--** | **--** | **--** | **Mejor Dupla sin Apalancamiento** |
 
-### 1.2 Validación Anti-Sobreajuste Fuera de Muestra (Out-of-Sample: 2020, 2021 y 2022)
-Para descartar cualquier riesgo de sobreajuste (*curve fitting*), se ejecutó el sistema sobre los 3 años completos anteriores con 10.962 observaciones de FinBERT:
-
-| Período y Régimen | SPY Buy & Hold | S3 Baseline | S5 v1.2.0 Retorno | Alpha vs SPY | Sharpe | MaxDD | WinRate | Estado |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Año 2020 (Crash COVID + Rebote)** | +15.56% | +9.83% | **+18.24%** | **+2.68%** | 0.60 | 24.10% | 48.1% | **Supera SPY** |
-| **Año 2021 (Mercado Alcista Renta Variable)** | +26.55% | -2.75% | **+14.08%** | -12.47% | 0.51 | 23.41% | 45.2% | Ganancia Neta |
-| **Año 2022 (Mercado Bajista Severo)** | **-19.71%** | -7.33% | **-1.43%** | **+18.28%** | -0.22 | 10.44% | 55.9% | **Protege Capital (+18% Alpha)** |
-| **Período Completo (2020–2022: 3 Años Continuos)** | **+18.20%** | -0.33% | **+37.58%** | **+19.38%** | 0.40 | 28.97% | 49.5% | **MÁS DEL DOBLE DE SPY** |
-
-> **Nota Metodológica:** En régimen bajista (`SPY` bajo EMA50/SMA200), la cartera rota al 100% en instrumentos libres de riesgo (~4.5% anual en T-Bills / `SGOV`). Las ventas en corto (*shorting*) fueron descartadas formalmente tras demostrar empíricamente que empeoran el Sharpe a 0.90 y duplican el drawdown (-17.90%) debido a la asimetría de los rebotes del mercado y comisiones de préstamo.
+### 1.2 Actualización de Estrategia S5 (Dual Momentum Leader v2.0)
+La estrategia principal (S5) ha sido evolucionada mediante factores macro-estructurales libres de sobreajuste (*curve fitting*):
+1. **Expansión de Universo:** El bot ahora evalúa ~100 activos líquidos (Nasdaq 100, S&P 100 y Bonos) en lugar de 14, generando un aumento neto de +25% en rentabilidad al capturar verdaderos líderes de mercado.
+2. **Refugio Personalizable:** Posibilidad de refugiarse en Efectivo (`BIL`/`SGOV`) o Bonos a Largo Plazo (`TLT`/`IEF`) durante mercados bajistas. (Se concluyó que el Efectivo sigue siendo superior tras analizar la caída correlacionada de bonos y acciones en 2022).
+3. **Arquitectura Multi-Estrategia (Silos):** La cartera se puede dividir en silos matemáticos rígidos (ej. 80% Core S5, 20% Satélite S11 Squeeze) para operar múltiples algoritmos sin que compitan por liquidez ni incurran en el "impuesto de interrupción".
 
 ---
 

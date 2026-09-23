@@ -26,11 +26,11 @@ from tbot.strategies.interfaces import (
 )
 
 
-class DualMomentumLeaderStrategy:
-    """Implementación canónica de S5 - Dual Momentum Leader unificada."""
+class TurnOfMonthMomentumStrategy:
+    """Implementación de S9 - Momentum con filtro estacional Turn of Month."""
 
-    id: str = "dual_momentum_leader"
-    version: str = "1.2.0"
+    id: str = "turn_of_month_momentum"
+    version: str = "1.0.0"
     schedule: list[str] = ["15:45 America/New_York"]
     allowed_regimes: set[MarketRegime] = {
         MarketRegime.BULL_CALM,
@@ -59,9 +59,7 @@ class DualMomentumLeaderStrategy:
         max_holding_sessions: int = 30,  # 30 sesiones bursátiles de retención máxima
         universe: list[str] | None = None,
         max_holding_days: int | None = None,  # Compatibilidad hacia atrás
-        refuge_asset: str | None = None,
     ) -> None:
-        self.refuge_asset = refuge_asset
         self.universe = list(universe) if universe is not None else list(self.DEFAULT_UNIVERSE)
         self.momentum_lookback_days = momentum_lookback_days
         self.top_n_leaders = top_n_leaders
@@ -76,21 +74,24 @@ class DualMomentumLeaderStrategy:
         """Identifica los activos con mayor momentum a 45 sesiones sobre la EMA25 y emite señales."""
         # 1. Filtro absoluto de régimen: Preservación de capital en mercados bajistas
         if ctx.regime not in self.allowed_regimes:
-            if self.refuge_asset and self.refuge_asset in ctx.current_prices:
-                return [
-                    Signal.create(
-                        strategy_id=self.id,
-                        version=self.version,
-                        symbol=self.refuge_asset,
-                        bar_ts=ctx.now,
-                        side="buy",
-                        entry_type="market",
-                        entry_price_ref=Decimal(str(ctx.current_prices[self.refuge_asset])),
-                        stop_price=Decimal(str(float(ctx.current_prices[self.refuge_asset]) * 0.95)), # 5% trailing
-                        max_holding=self.max_holding_sessions,
-                        score=100.0 # Prioridad máxima
-                    )
-                ]
+            return []
+
+        # 1.5 Filtro Estacional Turn of Month
+        import pandas as pd
+        from pandas.tseries.holiday import USFederalHolidayCalendar
+        
+        cur_date = ctx.now.date()
+        start_of_month = cur_date.replace(day=1)
+        end_of_month = start_of_month + pd.offsets.MonthEnd(0)
+        
+        bday_us = pd.offsets.CustomBusinessDay(calendar=USFederalHolidayCalendar())
+        bdays = pd.date_range(start=start_of_month, end=end_of_month, freq=bday_us)
+        
+        if len(bdays) >= 6:
+            tom_days = list(bdays[:3]) + list(bdays[-3:])
+            if pd.Timestamp(cur_date) not in tom_days:
+                return []
+        else:
             return []
 
         target_universe = self.universe if self.universe is not None else list(ctx.current_prices.keys())

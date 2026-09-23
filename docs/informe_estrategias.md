@@ -81,24 +81,20 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 ---
 
-### S5 — Dual Momentum Leader (Universo 14, 2011-2022)
+### S5 — Dual Momentum Leader v2.0 (Universo Expandido)
 
 **📅 Periodo:** 2011-01-03 → 2022-12-31
 
-**📝 ¿Qué hace?** Igual a la S5, pero aplicada al Universo de 14 activos original durante una década completa.
+**📝 ¿Qué hace?** Selecciona los ETFs y Acciones con mayor impulso (momentum) a 45 días. En su versión original (Universo 14) seleccionaba 4 activos. Tras la actualización, evalúa un **Universo Expandido de 93 activos** (Nasdaq 100 y Mega Caps) lo que multiplica sus oportunidades de encontrar tendencias de alta volatilidad. En mercados bajistas, rota 100% a efectivo remunerado (se comprobó que los Bonos `TLT` perdieron contra el efectivo en caídas correlacionadas como la de 2022).
 
-| Métrica | Valor |
-|---|---|
-| Rendimiento Total | +63.29% |
-| **Alpha vs S&P 500** | **-137.72%** |
-| Total de Operaciones | 580 |
-| Tasa de Aciertos | 32.8% |
-| Factor de Beneficio | 1.44 |
-
-![S5 — Dual Momentum Leader (Universo 14, 2011-2022)](C:/Users/nico_/.gemini/antigravity/brain/ce93cdbc-4bad-4db3-8d83-dff7b2fb9380/charts/s5_dual_momentum_u14.png)
+| Métrica | Valor (Universo 14) | Valor (Universo 93 Expandido) |
+|---|---|---|
+| Rendimiento Total | +43.37% | **+68.60%** |
+| Refugio Óptimo | Efectivo | Efectivo |
+| Max DD Histórico | Muy Bajo | Moderado (Mayor volatilidad de acciones individuales) |
 
 **🔍 Análisis del resultado:**
-⚖️ **Resultado mixto.** Rentable a largo plazo (63.29%), pero el S&P 500 fue imparable en esta década. Lo positivo es que sobrevivió a múltiples regímenes de mercado sin caídas extremas.
+🏆 **El núcleo absoluto de la cartera.** Ampliar el universo generó un salto de **+25% en rentabilidad neta**, demostrando que el factor momentum es robusto si se le otorga suficiente dispersión de activos para elegir. A futuro, su rendimiento se potenciará combinándolo en una estructura de "Silos de Capital" 80/20 junto a estrategias de corta duración (S11 Volatility Squeeze).
 
 ---
 

@@ -76,7 +76,6 @@ def compute_pid_terms_for_asset(
             "valid": False,
             "P": 0.0, "I": 0.0, "D": 0.0,
             "vol_exp": 1.0, "semidev": 1.0, "dd_depth": 0.0,
-            "corr_spy": 0.5, "gap_freq": 0.0,
             "gate_ok": False, "price": float(closes.iloc[-1]),
         }
 
@@ -132,30 +131,6 @@ def compute_pid_terms_for_asset(
     max_45 = float(closes.iloc[-window_ref:].max())
     dd_depth = (float(np.log(closes.iloc[-1])) - float(np.log(max_45))) / sigma_45
 
-    # Convergencia de correlación: corr_20d(r_i, r_SPY)
-    corr_spy = 0.5
-    if df_spy is not None and len(df_spy) >= 25:
-        spy_closes = df_spy["close"].astype(float)
-        spy_rets = np.log(spy_closes / spy_closes.shift(1)).iloc[-20:]
-        sub_r20 = r20.iloc[-len(spy_rets):]
-        if len(sub_r20) == len(spy_rets) and len(spy_rets) >= 10:
-            c_val = sub_r20.corr(spy_rets)
-            if not np.isnan(c_val):
-                corr_spy = float(c_val)
-
-    # Frecuencia de gaps: % sesiones a 20d con |open_t - close_{t-1}| > 1.5 * sigma
-    sub_opens = opens.iloc[-20:] if len(opens) >= 20 else opens
-    sub_prev_c = closes.shift(1).iloc[-len(sub_opens):]
-    gap_count = 0
-    tot_checked = 0
-    for o, pc in zip(sub_opens, sub_prev_c, strict=False):
-        if np.isnan(o) or np.isnan(pc) or pc <= 0:
-            continue
-        tot_checked += 1
-        if abs(o - pc) / pc > 1.5 * sigma_45:
-            gap_count += 1
-    gap_freq = (gap_count / tot_checked) if tot_checked > 0 else 0.0
-
     # Gate absoluto: close > EMA50 y retorno a 45 días > 0
     ema_50 = float(closes.ewm(span=50, adjust=False).mean().iloc[-1])
     c_now = float(closes.iloc[-1])
@@ -171,8 +146,6 @@ def compute_pid_terms_for_asset(
         "vol_exp": vol_exp,
         "semidev": semidev,
         "dd_depth": dd_depth,
-        "corr_spy": corr_spy,
-        "gap_freq": gap_freq,
         "gate_ok": gate_ok,
         "price": c_now,
     }
@@ -225,19 +198,15 @@ def score_universe_pid(
     sd_raw = [raw_results[s]["semidev"] for s in valid_syms]
     # dd_depth es negativo cuando hay drawdown: invertimos para que mayor sea mayor estrés
     dd_raw = [-raw_results[s]["dd_depth"] for s in valid_syms]
-    cs_raw = [raw_results[s]["corr_spy"] for s in valid_syms]
-    gf_raw = [raw_results[s]["gap_freq"] for s in valid_syms]
 
     z_ve = zscore_series(ve_raw)
     z_sd = zscore_series(sd_raw)
     z_dd = zscore_series(dd_raw)
-    z_cs = zscore_series(cs_raw)
-    z_gf = zscore_series(gf_raw)
 
     d_scores = {}
     for idx, s in enumerate(valid_syms):
-        # Estrés = promedio simple de z-scores de las 5 métricas de deterioro
-        d_scores[s] = (z_ve[idx] + z_sd[idx] + z_dd[idx] + z_cs[idx] + z_gf[idx]) / 5.0
+        # Estrés = promedio simple de z-scores de las 3 métricas de deterioro
+        d_scores[s] = (z_ve[idx] + z_sd[idx] + z_dd[idx]) / 3.0
 
     # 3. Capa de arbitraje:
     # elegible = (u_i > 0) y (d_i < 1.0) y gate_absoluto

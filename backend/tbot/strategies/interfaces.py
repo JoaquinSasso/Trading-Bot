@@ -31,7 +31,7 @@ class Signal:
     signal_id: str
     strategy_id: str
     symbol: str
-    side: Literal["buy"]  # Solo largos en la especificación
+    side: Literal["buy", "sell"]
     entry_type: Literal["market", "limit"]
     entry_price_ref: Decimal
     stop_price: Decimal
@@ -50,7 +50,7 @@ class Signal:
         version: str,
         symbol: str,
         bar_ts: datetime,
-        side: Literal["buy"],
+        side: Literal["buy", "sell"],
         entry_type: Literal["market", "limit"],
         entry_price_ref: Decimal,
         stop_price: Decimal,

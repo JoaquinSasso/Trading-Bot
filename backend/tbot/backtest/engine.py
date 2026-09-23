@@ -1073,7 +1073,19 @@ class BacktestEngine:
                 )
 
                 signals = self.strategy.generate(ctx)
+                
+                # First, process explicit SELL signals
                 for sig in signals:
+                    if sig.side == "sell" and sig.symbol in self.broker.positions:
+                        cur_p = current_prices.get(sig.symbol, self.broker.positions[sig.symbol].entry_price)
+                        tr = self.broker.close_position(sig.symbol, cur_p, current_day, reason="explicit_sell_signal")
+                        if tr and self.cb_manager:
+                            self.cb_manager.record_trade(tr.pnl, tr.exit_time)
+
+                # Then, process BUY signals
+                for sig in signals:
+                    if sig.side != "buy":
+                        continue
                     if len(self.broker.positions) >= self.max_open_positions:
                         break
                     if sig.symbol in self.broker.positions:

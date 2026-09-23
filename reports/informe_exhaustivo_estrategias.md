@@ -1,18 +1,20 @@
 # 📊 Informe Exhaustivo de Estrategias — Trading Bot v2.0
 
+**Fecha de generación:** 2026-09-23 00:49
+
 **Capital inicial:** \$2,000.00 USD
+
 
 ---
 
 ## 📋 Resumen Ejecutivo
 
-Este informe compara **todas las estrategias del Trading Bot** contra el rendimiento del S&P 500 (SPY) en el mayor periodo de datos disponible para cada una. Se divide en tres grupos según el tipo de datos que necesita cada estrategia:
+Este informe compara **las estrategias del Trading Bot** contra el rendimiento 
+del S&P 500 (SPY) en el mayor periodo de datos disponible para cada una. 
+Se divide en dos grupos según el tipo de datos que necesita cada estrategia:
 
 1. **Estrategias Diarias** — Analizan precios de cierre diarios (periodo más largo: 2018-2022 o 2011-2022)
 2. **Estrategias Horarias** — Analizan precios cada hora (2023-2025)
-3. **Estrategias de 5 Minutos** — Analizan precios cada 5 minutos (ventana diagnóstica corta de ~60 sesiones)
-
-> **⚠️ Nota importante:** Los resultados de estrategias de 5 minutos son de una ventana diagnóstica muy corta y no deben usarse para tomar decisiones sobre qué estrategia es "mejor".
 
 ---
 
@@ -26,16 +28,33 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 | Métrica | Valor |
 |---|---|
-| Rendimiento Total | -3.42% |
-| **Alpha vs S&P 500** | **-35.38%** |
-| Total de Operaciones | 251 |
-| Tasa de Aciertos | 37.0% |
-| Factor de Beneficio | 0.77 |
+| Capital Final | \$1,893.86 |
+| Rendimiento Total | -5.31% |
+| S&P 500 (mismo periodo) | +31.96% |
+| **Alpha vs S&P 500** | **-37.27%** |
+| Rendimiento Anualizado (CAGR) | -1.25% |
+| Ratio Sharpe | -0.65 |
+| Ratio Sortino | -0.42 |
+| Máxima Caída (Drawdown) | 10.53% |
+| Total de Operaciones | 128 |
+| Tasa de Aciertos | 39.1% |
+| Factor de Beneficio | 0.49 |
+| Comisiones Pagadas | \$1.57 |
 
-![S2 — Mean Reversion RSI(2)](charts/s2_mean_reversion_rsi2.png)
+![S2 — Mean Reversion RSI(2)](charts\s2_mean_reversion_rsi2.png)
 
 **🔍 Análisis del resultado:**
-❌ **Resultado negativo.** La estrategia perdió 3.42% del capital. Con 251 operaciones y una tasa de aciertos del 37.0%, los costos de comisiones y el deslizamiento de precios contribuyeron a la pérdida.
+
+❌ **Resultado negativo.** La estrategia perdió 5.31% 
+del capital. Con 128 operaciones y una tasa de aciertos del 
+39.1%, los costos de comisiones (\$1.57) y el 
+deslizamiento de precios contribuyeron a la pérdida.
+
+**🎯 ¿Tiene sobreajuste?**
+
+⚠️ **Posible sobreajuste.** El Deflated Sharpe Ratio (0.08) 
+es bajo, lo que sugiere que el resultado podría ser producto del azar o del sesgo 
+de selección entre múltiples pruebas.
 
 ---
 
@@ -47,37 +66,69 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 | Métrica | Valor |
 |---|---|
+| Capital Final | \$2,077.37 |
 | Rendimiento Total | +3.87% |
+| S&P 500 (mismo periodo) | +31.96% |
 | **Alpha vs S&P 500** | **-28.09%** |
+| Rendimiento Anualizado (CAGR) | +0.88% |
+| Ratio Sharpe | 0.01 |
+| Ratio Sortino | 0.01 |
+| Máxima Caída (Drawdown) | 13.37% |
 | Total de Operaciones | 476 |
 | Tasa de Aciertos | 34.9% |
 | Factor de Beneficio | 0.99 |
+| Comisiones Pagadas | \$6.44 |
 
-![S3 — Trend Pullback](charts/s3_trend_pullback.png)
+![S3 — Trend Pullback](charts\s3_trend_pullback.png)
 
 **🔍 Análisis del resultado:**
-⚖️ **Resultado mixto.** La estrategia fue rentable (3.87%) pero quedó por debajo del S&P 500 (31.96%). Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (3.87%) 
+pero quedó por debajo del S&P 500 (31.96%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+✅ **Sin señales evidentes de sobreajuste.** Los parámetros de la estrategia son 
+razonables y no hay indicios claros de memorización de datos históricos. 
+Sin embargo, solo la validación forward (paper trading) puede confirmarlo.
 
 ---
 
-### S5 — Dual Momentum Leader (Universo A, 45d)
+### S5 — Dual Momentum Leader (Universo A)
 
 **📅 Periodo:** 2018-09-01 → 2022-12-31
 
-**📝 ¿Qué hace?** Selecciona los 4 ETFs con mayor impulso (momentum) a 45 días dentro de los 18 ETFs sectoriales, internacionales y metales del Universo A. En mercados bajistas, rota 100% a efectivo remunerado (~4.5% anual).
+**📝 ¿Qué hace?** Selecciona los 4 ETFs con mayor impulso (momentum) a 45 días dentro de los 18 ETFs sectoriales, internacionales y metales del Universo A, siempre que estén sobre su media móvil de 25 días. En mercados bajistas, rota 100% a efectivo remunerado (~4.5% anual).
 
 | Métrica | Valor |
 |---|---|
+| Capital Final | \$2,399.76 |
 | Rendimiento Total | +19.99% |
+| S&P 500 (mismo periodo) | +31.96% |
 | **Alpha vs S&P 500** | **-11.97%** |
+| Rendimiento Anualizado (CAGR) | +4.31% |
+| Ratio Sharpe | 0.95 |
+| Ratio Sortino | 1.15 |
+| Máxima Caída (Drawdown) | 2.54% |
 | Total de Operaciones | 187 |
 | Tasa de Aciertos | 39.0% |
 | Factor de Beneficio | 1.70 |
+| Comisiones Pagadas | \$1.18 |
 
-![S5 — Dual Momentum Leader (Universo A)](charts/s5_dual_momentum_ua.png)
+![S5 — Dual Momentum Leader (Universo A)](charts\s5_dual_momentum_ua.png)
 
 **🔍 Análisis del resultado:**
-⚖️ **Resultado mixto.** Fue muy estable (drawdown máximo de solo 2.54%) y rentable (19.99%), pero en un mercado fuertemente alcista (SPY subió 31.96%) se quedó algo atrás. Su ratio riesgo-beneficio es excelente.
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (19.99%) 
+pero quedó por debajo del S&P 500 (31.96%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+✅ **Sin señales evidentes de sobreajuste.** Los parámetros de la estrategia son 
+razonables y no hay indicios claros de memorización de datos históricos. 
+Sin embargo, solo la validación forward (paper trading) puede confirmarlo.
 
 ---
 
@@ -85,20 +136,36 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 **📅 Periodo:** 2011-01-03 → 2022-12-31
 
-**📝 ¿Qué hace?** Igual a la S5, pero aplicada al Universo de 14 activos original durante una década completa.
+**📝 ¿Qué hace?** Selecciona los 4 activos líderes en momentum a 45 días dentro del universo de 14 activos (Tech+Finanzas+Salud+Energía+Oro+Plata). En mercados bajistas, se refugia en efectivo.
 
 | Métrica | Valor |
 |---|---|
+| Capital Final | \$3,265.82 |
 | Rendimiento Total | +63.29% |
+| S&P 500 (mismo periodo) | +201.01% |
 | **Alpha vs S&P 500** | **-137.72%** |
+| Rendimiento Anualizado (CAGR) | +4.18% |
+| Ratio Sharpe | 0.90 |
+| Ratio Sortino | 1.06 |
+| Máxima Caída (Drawdown) | 6.72% |
 | Total de Operaciones | 580 |
 | Tasa de Aciertos | 32.8% |
 | Factor de Beneficio | 1.44 |
+| Comisiones Pagadas | \$6.18 |
 
-![S5 — Dual Momentum Leader (Universo 14, 2011-2022)](charts/s5_dual_momentum_u14.png)
+![S5 — Dual Momentum Leader (Universo 14, 2011-2022)](charts\s5_dual_momentum_u14.png)
 
 **🔍 Análisis del resultado:**
-⚖️ **Resultado mixto.** Rentable a largo plazo (63.29%), pero el S&P 500 fue imparable en esta década. Lo positivo es que sobrevivió a múltiples regímenes de mercado sin caídas extremas.
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (63.29%) 
+pero quedó por debajo del S&P 500 (201.01%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+✅ **Sin señales evidentes de sobreajuste.** Los parámetros de la estrategia son 
+razonables y no hay indicios claros de memorización de datos históricos. 
+Sin embargo, solo la validación forward (paper trading) puede confirmarlo.
 
 ---
 
@@ -110,16 +177,32 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 | Métrica | Valor |
 |---|---|
+| Capital Final | \$2,280.19 |
 | Rendimiento Total | +14.01% |
+| S&P 500 (mismo periodo) | +31.96% |
 | **Alpha vs S&P 500** | **-17.95%** |
+| Rendimiento Anualizado (CAGR) | +3.08% |
+| Ratio Sharpe | 0.61 |
+| Ratio Sortino | 0.75 |
+| Máxima Caída (Drawdown) | 3.56% |
 | Total de Operaciones | 200 |
 | Tasa de Aciertos | 36.5% |
 | Factor de Beneficio | 1.37 |
+| Comisiones Pagadas | \$1.18 |
 
-![S5 — Dual Momentum Leader 30d (Universo A)](charts/s5_dual_momentum_ua_30d.png)
+![S5 — Dual Momentum Leader 30d (Universo A)](charts\s5_dual_momentum_ua_30d.png)
 
 **🔍 Análisis del resultado:**
-⚖️ **Resultado mixto.** Disminuir el lookback de 45 días a 30 días generó ligeramente más operaciones (200 vs 187) y redujo el retorno total de 19.99% a 14.01%. Esto sugiere que 45 días es un mejor filtro para aislar el "ruido" a corto plazo, pero al mantenerse rentable en 30 días nos demuestra que la estrategia es **robusta** y no depende de un parámetro sobre-optimizado para funcionar.
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (14.01%) 
+pero quedó por debajo del S&P 500 (31.96%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+✅ **Sin señales evidentes de sobreajuste.** Los parámetros de la estrategia son 
+razonables y no hay indicios claros de memorización de datos históricos. 
+Sin embargo, solo la validación forward (paper trading) puede confirmarlo.
 
 ---
 
@@ -127,20 +210,147 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 **📅 Periodo:** 2018-09-01 → 2022-12-31
 
-**📝 ¿Qué hace?** Sistema de control dual (tendencia vs estrés). Solo compra activos con tendencia fuerte y bajo estrés.
+**📝 ¿Qué hace?** Sistema de control dual inspirado en ingeniería (PID: Proporcional-Integral-Derivativo). Mide la fuerza de tendencia (Sistema U) y el nivel de estrés/deterioro (Sistema D) de cada activo. Solo compra activos con tendencia fuerte y bajo estrés. Sale forzadamente si el estrés se dispara.
 
 | Métrica | Valor |
 |---|---|
-| Rendimiento Total | +14.81% |
-| **Alpha vs S&P 500** | **-17.15%** |
-| Total de Operaciones | 201 |
-| Tasa de Aciertos | 39.3% |
-| Factor de Beneficio | 1.30 |
+| Capital Final | \$2,306.35 |
+| Rendimiento Total | +15.32% |
+| S&P 500 (mismo periodo) | +31.96% |
+| **Alpha vs S&P 500** | **-16.64%** |
+| Rendimiento Anualizado (CAGR) | +3.35% |
+| Ratio Sharpe | 0.42 |
+| Ratio Sortino | 0.46 |
+| Máxima Caída (Drawdown) | 6.63% |
+| Total de Operaciones | 207 |
+| Tasa de Aciertos | 38.6% |
+| Factor de Beneficio | 1.31 |
+| Comisiones Pagadas | \$1.83 |
 
-![S7 — PID Scorer](charts/s7_pid_scorer.png)
+![S7 — PID Scorer](charts\s7_pid_scorer.png)
 
 **🔍 Análisis del resultado:**
-⚖️ **Resultado mixto.** Sólido y consistente (14.81%), protegiendo bien el capital durante caídas, pero algo menos rentable que simplemente comprar el mercado entero.
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (15.32%) 
+pero quedó por debajo del S&P 500 (31.96%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+✅ **Sin señales evidentes de sobreajuste.** Los parámetros de la estrategia son 
+razonables y no hay indicios claros de memorización de datos históricos. 
+Sin embargo, solo la validación forward (paper trading) puede confirmarlo.
+
+---
+
+### S9 — Turn of Month Momentum
+
+**📅 Periodo:** 2018-09-01 → 2022-12-31
+
+**📝 ¿Qué hace?** Momentum a 45 días operando solo los últimos 3 y primeros 3 días del mes (Filtro Estacional).
+
+| Métrica | Valor |
+|---|---|
+| Capital Final | \$2,232.39 |
+| Rendimiento Total | +11.62% |
+| S&P 500 (mismo periodo) | +31.96% |
+| **Alpha vs S&P 500** | **-20.34%** |
+| Rendimiento Anualizado (CAGR) | +2.58% |
+| Ratio Sharpe | 1.22 |
+| Ratio Sortino | 1.01 |
+| Máxima Caída (Drawdown) | 0.79% |
+| Total de Operaciones | 14 |
+| Tasa de Aciertos | 21.4% |
+| Factor de Beneficio | 2.91 |
+| Comisiones Pagadas | \$0.11 |
+
+![S9 — Turn of Month Momentum](charts\s9_turn_of_month.png)
+
+**🔍 Análisis del resultado:**
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (11.62%) 
+pero quedó por debajo del S&P 500 (31.96%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+⚠️ **Riesgo alto de sobreajuste.** Con solo 14 operaciones, 
+la muestra es demasiado pequeña para tener confianza estadística en los resultados. 
+Un resultado aparentemente bueno podría deberse al azar.
+
+---
+
+### S10 — Antonacci Dual Momentum
+
+**📅 Periodo:** 2018-09-01 → 2022-12-31
+
+**📝 ¿Qué hace?** Dual Momentum Absoluto a 12 meses. Compara Universo A contra IEF como activo seguro.
+
+| Métrica | Valor |
+|---|---|
+| Capital Final | \$2,149.64 |
+| Rendimiento Total | +7.48% |
+| S&P 500 (mismo periodo) | +31.96% |
+| **Alpha vs S&P 500** | **-24.48%** |
+| Rendimiento Anualizado (CAGR) | +1.68% |
+| Ratio Sharpe | 7.51 |
+| Ratio Sortino | 0.00 |
+| Máxima Caída (Drawdown) | 0.00% |
+| Total de Operaciones | 0 |
+| Tasa de Aciertos | 0.0% |
+| Factor de Beneficio | 0.00 |
+| Comisiones Pagadas | \$0.00 |
+
+![S10 — Antonacci Dual Momentum](charts\s10_antonacci.png)
+
+**🔍 Análisis del resultado:**
+
+Esta estrategia no generó operaciones en el periodo evaluado. 
+Esto puede deberse a que sus condiciones de entrada son muy restrictivas 
+o a que el régimen de mercado bloqueó las señales durante todo el periodo.
+
+**🎯 ¿Tiene sobreajuste?**
+
+⚠️ **Riesgo alto de sobreajuste.** Con solo 0 operaciones, 
+la muestra es demasiado pequeña para tener confianza estadística en los resultados. 
+Un resultado aparentemente bueno podría deberse al azar.
+
+---
+
+### S11 — Volatility Squeeze
+
+**📅 Periodo:** 2018-09-01 → 2022-12-31
+
+**📝 ¿Qué hace?** Ruptura de compresión de volatilidad (Bollinger Bands dentro de Keltner Channels).
+
+| Métrica | Valor |
+|---|---|
+| Capital Final | \$2,232.08 |
+| Rendimiento Total | +11.60% |
+| S&P 500 (mismo periodo) | +31.96% |
+| **Alpha vs S&P 500** | **-20.36%** |
+| Rendimiento Anualizado (CAGR) | +2.57% |
+| Ratio Sharpe | 0.43 |
+| Ratio Sortino | 0.32 |
+| Máxima Caída (Drawdown) | 7.00% |
+| Total de Operaciones | 51 |
+| Tasa de Aciertos | 37.2% |
+| Factor de Beneficio | 1.41 |
+| Comisiones Pagadas | \$0.52 |
+
+![S11 — Volatility Squeeze](charts\s11_squeeze.png)
+
+**🔍 Análisis del resultado:**
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (11.60%) 
+pero quedó por debajo del S&P 500 (31.96%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+✅ **Sin señales evidentes de sobreajuste.** Los parámetros de la estrategia son 
+razonables y no hay indicios claros de memorización de datos históricos. 
+Sin embargo, solo la validación forward (paper trading) puede confirmarlo.
 
 ---
 
@@ -148,12 +358,15 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 | Estrategia | Retorno | Alpha vs SPY | Sharpe | Sortino | Max DD | Trades | Win Rate | Profit F. |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **S2** | -3.42% | -35.38% | -0.35 | -0.33 | 7.2% | 251 | 37% | 0.77 |
+| **S2** | -5.31% | -37.27% | -0.65 | -0.42 | 10.5% | 128 | 39% | 0.49 |
 | **S3** | +3.87% | -28.09% | 0.01 | 0.01 | 13.4% | 476 | 35% | 0.99 |
-| **S5-UA (45d)** | +19.99% | -11.97% | 0.95 | 1.15 | 2.5% | 187 | 39% | 1.70 |
+| **S5-UA** | +19.99% | -11.97% | 0.95 | 1.15 | 2.5% | 187 | 39% | 1.70 |
 | **S5-U14** | +63.29% | -137.72% | 0.90 | 1.06 | 6.7% | 580 | 33% | 1.44 |
 | **S5-UA-30d** | +14.01% | -17.95% | 0.61 | 0.75 | 3.6% | 200 | 36% | 1.37 |
-| **S7** | +14.81% | -17.15% | 0.41 | 0.44 | 6.6% | 201 | 39% | 1.30 |
+| **S7** | +15.32% | -16.64% | 0.42 | 0.46 | 6.6% | 207 | 39% | 1.31 |
+| **S9** | +11.62% | -20.34% | 1.22 | 1.01 | 0.8% | 14 | 21% | 2.91 |
+| **S10** | +7.48% | -24.48% | 7.51 | 0.00 | 0.0% | 0 | 0% | 0.00 |
+| **S11** | +11.60% | -20.36% | 0.43 | 0.32 | 7.0% | 51 | 37% | 1.41 |
 | **SPY B&H** | +31.96% | +0.00% | — | — | — | 1 | — | — |
 
 ![Comparativa Diarias](charts/comparativa_daily.png)
@@ -162,63 +375,88 @@ Este informe compara **todas las estrategias del Trading Bot** contra el rendimi
 
 ## 📈 Grupo: Estrategias Horarias (1h)
 
-### S6 — Hourly Multi-Horizon Momentum
+### S8 — PID Multi-Horizon (Variante A)
 
 **📅 Periodo:** 2023-10-23 → 2025-09-21
 
-**📝 ¿Qué hace?** Cada hora analiza el impulso de las últimas horas, ordena por fuerza y compra los 3 mejores. Cierra todo antes de finalizar el día.
+**📝 ¿Qué hace?** Extensión del PID Scorer que combina 8 horizontes temporales (desde 5 minutos hasta 10 días) para medir tendencia y estrés. La Variante A da más peso a los horizontes largos (visión macro), combinando datos diarios y de 1 hora.
 
 | Métrica | Valor |
 |---|---|
-| Rendimiento Total | +8.33% |
-| **Alpha vs S&P 500** | **-49.50%** |
-| Total de Operaciones | 8 |
+| Capital Final | \$2,282.16 |
+| Rendimiento Total | +14.11% |
+| S&P 500 (mismo periodo) | +57.83% |
+| **Alpha vs S&P 500** | **-43.72%** |
+| Rendimiento Anualizado (CAGR) | +7.21% |
+| Ratio Sharpe | 0.60 |
+| Ratio Sortino | 0.54 |
+| Máxima Caída (Drawdown) | 2.83% |
+| Total de Operaciones | 25 |
+| Tasa de Aciertos | 32.0% |
+| Factor de Beneficio | 2.11 |
+| Comisiones Pagadas | \$0.30 |
 
-![S6 — Hourly Multi-Horizon Momentum](charts/s6_hourly_momentum.png)
+![S8 — PID Multi-Horizon (Variante A)](charts\s8_pid_multihorizon_A.png)
 
-**🎯 ¿Tiene sobreajuste?** ⚠️ **Alto riesgo.** Con solo 8 operaciones, no es estadísticamente significativa.
+**🔍 Análisis del resultado:**
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (14.11%) 
+pero quedó por debajo del S&P 500 (57.83%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+⚠️ **Riesgo alto de sobreajuste.** Con solo 25 operaciones, 
+la muestra es demasiado pequeña para tener confianza estadística en los resultados. 
+Un resultado aparentemente bueno podría deberse al azar.
 
 ---
 
-### S8 — PID Multi-Horizon (Variante A y B)
+### S8 — PID Multi-Horizon (Variante B)
 
 **📅 Periodo:** 2023-10-23 → 2025-09-21
 
-**📝 ¿Qué hace?** Combina horizontes temporales (macro y micro) para medir tendencia y estrés. 
-- Variante A (Macro): Rendimiento de +14.11% (Alpha -43.72%)
-- Variante B (Micro/Intraday): Rendimiento de +16.69% (Alpha -41.14%)
+**📝 ¿Qué hace?** Igual que Variante A, pero usa pesos logarítmicos que dan más importancia relativa a los horizontes intermedios (30min-2h). Busca capturar movimientos intradía con más peso en la acción de precio reciente.
 
-![S8 — PID Multi-Horizon (Variante B)](charts/s8_pid_multihorizon_B.png)
+| Métrica | Valor |
+|---|---|
+| Capital Final | \$2,333.86 |
+| Rendimiento Total | +16.69% |
+| S&P 500 (mismo periodo) | +57.83% |
+| **Alpha vs S&P 500** | **-41.14%** |
+| Rendimiento Anualizado (CAGR) | +8.48% |
+| Ratio Sharpe | 0.94 |
+| Ratio Sortino | 0.98 |
+| Máxima Caída (Drawdown) | 1.65% |
+| Total de Operaciones | 25 |
+| Tasa de Aciertos | 36.0% |
+| Factor de Beneficio | 4.56 |
+| Comisiones Pagadas | \$0.31 |
+
+![S8 — PID Multi-Horizon (Variante B)](charts\s8_pid_multihorizon_B.png)
+
+**🔍 Análisis del resultado:**
+
+⚖️ **Resultado mixto.** La estrategia fue rentable (16.69%) 
+pero quedó por debajo del S&P 500 (57.83%). 
+Esto significa que habría sido más rentable simplemente comprar y mantener SPY.
+
+**🎯 ¿Tiene sobreajuste?**
+
+⚠️ **Riesgo alto de sobreajuste.** Con solo 25 operaciones, 
+la muestra es demasiado pequeña para tener confianza estadística en los resultados. 
+Un resultado aparentemente bueno podría deberse al azar.
+
+---
 
 ### 📊 Tabla Comparativa — Estrategias Horarias (1h)
 
-| Estrategia | Retorno | Alpha vs SPY | Max DD | Trades | Win Rate |
-| --- | --- | --- | --- | --- | --- |
-| **S6-1h** | +8.33% | -49.50% | 1.0% | 8 | 12% |
-| **S8-A** | +14.11% | -43.72% | 2.8% | 25 | 32% |
-| **S8-B** | +16.69% | -41.14% | 1.6% | 25 | 36% |
-| **SPY B&H** | +57.83% | +0.00% | — | 1 | — |
+| Estrategia | Retorno | Alpha vs SPY | Sharpe | Sortino | Max DD | Trades | Win Rate | Profit F. |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **S8-A** | +14.11% | -43.72% | 0.60 | 0.54 | 2.8% | 25 | 32% | 2.11 |
+| **S8-B** | +16.69% | -41.14% | 0.94 | 0.98 | 1.6% | 25 | 36% | 4.56 |
+| **SPY B&H** | +57.83% | +0.00% | — | — | — | 1 | — | — |
 
 ![Comparativa Horarias (1h)](charts/comparativa_hourly.png)
 
 ---
-
-## 🔬 Análisis de Estrategias y Recomendaciones
-
-Tras evaluar los datos de los backtests y cruzar información con estudios cuantitativos recientes sobre estas estrategias, obtenemos las siguientes conclusiones:
-
-### 1. ¿Qué estrategias deberíamos dejar de lado?
-* **S1 (Intraday Momentum de 28 minutos):** Históricamente esta anomalía (comprar al cierre lo que subió en la apertura) funcionó, pero la evidencia académica actual (2023+) sugiere que ha perdido casi toda su ventaja estadística debido a los algoritmos de alta frecuencia (HFT). Con comisiones en cuentas pequeñas, consume el capital rápidamente. *Sugerencia: Descartar.*
-* **S4 (Opening Range Breakout / ORB) sin filtros:** Las rupturas de rango de apertura de los primeros 5 minutos son una de las estrategias más "abarrotadas" hoy en día. Si se aplica ciegamente a SPY o QQQ todos los días, la tasa de falsos rompimientos ("fakeouts") destruye la rentabilidad. *Sugerencia: Dejar de lado como estrategia general.*
-
-### 2. ¿Cuáles tienen posibles mejoras sin caer en sobre ajuste?
-* **S5 (Dual Momentum Leader):** Es nuestra estrategia más fuerte. El momentum es un factor real. 
-  * *Mejora simple y robusta:* Ponderar las posiciones por "Inversa de Volatilidad" (Risk Parity). En lugar de comprar partes iguales, se compra más de activos tranquilos y menos de activos volátiles.
-  * *Riesgo de Sobreajuste:* Evitar testear decenas de periodos de "lookback" (e.g. 32 días vs 45 días) para buscar el mejor retorno. Como pudimos comprobar al correrla con 30 días, el retorno disminuyó ligeramente pero siguió siendo sólidamente rentable y disminuyó el ruido, lo que prueba que el modelo es robusto y no está sobre-optimizado a un parámetro único.
-* **S2 (Mean Reversion RSI-2):** Esta estrategia clásica de Larry Connors tiene fundamento, pero el mercado hoy es más ruidoso.
-  * *Mejora sin sobreajuste:* Agregar confirmación de volumen (exigir que el volumen en el día de la caída sea > 1.5x lo normal). Esto filtra caídas sin convicción. 
-
-### 3. Nuevas estrategias que podríamos probar
-* **Dual Momentum Absoluto con Bonos (Gary Antonacci):** En lugar de comparar solo las acciones, comparar las acciones contra el retorno a corto plazo de Bonos del Tesoro (BIL o IEF). Solo se compra renta variable si su momentum de los últimos 12 meses es positivo *Y* superior a los bonos. 
-* **Carry + Momentum:** No mirar solo el precio, mirar el "Carry" (Dividend Yield para acciones, o Cupones para Bonos). Combinar un score que sea 50% Momentum de Precio y 50% Rendimiento de Dividendos (Carry). Funciona especialmente bien para mitigar pérdidas en mercados laterales.
-* **Momentum Estacional (Turn-of-Month):** Restringir las entradas intradía (como el S6/S8) exclusivamente a los últimos 3 y primeros 3 días hábiles del mes, aprovechando los flujos de rebalanceo institucional y el pago de nóminas, reduciendo enormemente el número de trades y las comisiones.
