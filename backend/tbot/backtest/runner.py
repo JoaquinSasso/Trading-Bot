@@ -1,7 +1,7 @@
 """Runner CLI para ejecución de backtests y generación de reportes Markdown.
 
 Uso:
-    python -m tbot.backtest.runner --strategy s1 --start 2025-01-01 --end 2025-12-31 --capital 2000
+    python -m tbot.backtest.runner --strategy s1 --start 2020-01-01 --end 2022-12-31 --capital 2000
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import pandas as pd
 
 from tbot.backtest.data_loader import HistoricalDataLoader
 from tbot.backtest.engine import ReplayEngine
+from tbot.backtest.guards import assert_not_holdout
 from tbot.strategies.s1_intraday_momentum import IntradayMomentumStrategy
 from tbot.strategies.s2_mean_reversion_rsi2 import MeanReversionRSI2Strategy
 from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
@@ -49,9 +50,17 @@ def parse_args() -> argparse.Namespace:
         help="Estrategia a evaluar (s1, s2, s3, s4, s5, o nombre completo).",
     )
     parser.add_argument(
-        "--start", type=str, default="2025-01-01", help="Fecha inicio (YYYY-MM-DD)."
+        "--start",
+        type=str,
+        default="2020-01-01",
+        help="Fecha inicio (YYYY-MM-DD) [Ventana desarrollo: 2010-01-01 a 2022-12-31].",
     )
-    parser.add_argument("--end", type=str, default="2025-12-31", help="Fecha fin (YYYY-MM-DD).")
+    parser.add_argument(
+        "--end",
+        type=str,
+        default="2022-12-31",
+        help="Fecha fin (YYYY-MM-DD) [Ventana desarrollo: 2010-01-01 a 2022-12-31].",
+    )
     parser.add_argument(
         "--capital", type=float, default=2000.0, help="Capital inicial en USD (default 2000)."
     )
@@ -59,7 +68,10 @@ def parse_args() -> argparse.Namespace:
         "--trials", type=int, default=5, help="Cantidad de combinaciones probadas para DSR."
     )
     parser.add_argument(
-        "--data-dir", type=str, default="data/historical", help="Directorio de datos históricos."
+        "--data-dir",
+        type=str,
+        default="data/historical_2020_2022",
+        help="Directorio de datos históricos de desarrollo.",
     )
     parser.add_argument(
         "--output-dir",
@@ -90,6 +102,9 @@ def main() -> int:
     start_d = datetime.strptime(args.start, "%Y-%m-%d").date()
     end_d = datetime.strptime(args.end, "%Y-%m-%d").date()
 
+    # Validación inmediata de Guarda de Holdout en CLI
+    assert_not_holdout(start=start_d, end=end_d, resolution="daily")
+
     loader = HistoricalDataLoader(data_dir=args.data_dir)
     print(f"=== Iniciando Backtest Oficial: {strategy.id} v{strategy.version} ===")
     print(
@@ -110,17 +125,25 @@ def main() -> int:
 
     for sym in needed_symbols:
         csv_file = Path(args.data_dir) / f"{sym}_daily.csv"
+        hist_start = start_d - pd.Timedelta(days=365)
+        h_start_d = hist_start.date() if hasattr(hist_start, "date") else hist_start
+
         if csv_file.exists():
             print(f"Cargando {sym} desde {csv_file}...")
-            df_d = loader.load_from_csv(csv_file, symbol=sym)
+            df_d = loader.load_from_csv(
+                csv_file,
+                symbol=sym,
+                start_date=h_start_d,
+                end_date=end_d,
+                resolution="daily",
+            )
             daily_bars[sym] = df_d
         else:
             print(f"Generando histórico sintético para {sym} ({start_d} a {end_d})...")
             # Incluir 1 año previo para cálculo de medias móviles (SMA200)
-            hist_start = start_d - pd.Timedelta(days=365)
             df_d, df_i = loader.generate_synthetic_history(
                 symbol=sym,
-                start_date=hist_start.date() if hasattr(hist_start, "date") else hist_start,
+                start_date=h_start_d,
                 end_date=end_d,
                 seed=hash(sym) % 100000,
             )

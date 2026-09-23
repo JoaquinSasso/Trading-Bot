@@ -7,7 +7,7 @@ Permite responder a la pregunta fundamental del proyecto:
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -17,25 +17,35 @@ from tbot.ai.providers import MockAIProvider
 from tbot.ai.veto import AIVeto
 from tbot.backtest.data_loader import HistoricalDataLoader
 from tbot.backtest.engine import ReplayEngine
+from tbot.backtest.guards import assert_not_holdout
 from tbot.strategies.s3_trend_pullback import TrendPullbackStrategy
 
 
 async def run_comparison(
-    start_date: date = date(2025, 1, 1),
-    end_date: date = date(2025, 12, 31),
+    start_date: date = date(2020, 1, 1),
+    end_date: date = date(2022, 12, 31),
     capital: float = 2000.0,
+    data_dir: Path | str = "data/historical_2020_2022",
 ) -> int:
+    assert_not_holdout(start=start_date, end=end_date, resolution="daily")
+
     print("=== Comparativa Experimental: Variante A vs Variante B ===")
     print(f"Período: {start_date} al {end_date} | Capital Inicial: ${capital:,.2f}\n")
 
-    loader = HistoricalDataLoader()
+    loader = HistoricalDataLoader(data_dir=data_dir)
     symbols = ["SPY", "QQQ", "AAPL", "NVDA", "MSFT"]
     daily_bars: dict[str, pd.DataFrame] = {}
 
     for s in symbols:
-        csv_p = Path(f"data/historical/{s}_daily.csv")
+        csv_p = Path(data_dir) / f"{s}_daily.csv"
         if csv_p.exists():
-            daily_bars[s] = loader.load_from_csv(csv_p, s)
+            daily_bars[s] = loader.load_from_csv(
+                csv_p,
+                symbol=s,
+                start_date=start_date - timedelta(days=365),
+                end_date=end_date,
+                resolution="daily",
+            )
         else:
             daily_bars[s] = loader.fetch_and_save_real_data(s)
 

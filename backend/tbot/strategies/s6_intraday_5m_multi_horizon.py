@@ -20,11 +20,9 @@ Diseñada para la rama 'feat/intraday-5m-hft':
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import time
 from decimal import Decimal
-from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from tbot.indicators.pure import ema
@@ -33,7 +31,6 @@ from tbot.strategies.interfaces import (
     Signal,
     StrategyContext,
     StrategyDataRequirements,
-    compute_signal_id,
 )
 
 HORIZON_BARS_MAP = {
@@ -187,11 +184,11 @@ class Intraday5mMultiHorizonStrategy:
         # Promediar rankings ordinales
         for item in metrics_list:
             avg_rank = (
-                getattr(item, "_rank_m10")
-                + getattr(item, "_rank_m15")
-                + getattr(item, "_rank_m30")
-                + getattr(item, "_rank_m45")
-                + getattr(item, "_rank_m60")
+                item._rank_m10
+                + item._rank_m15
+                + item._rank_m30
+                + item._rank_m45
+                + item._rank_m60
             ) / 5.0
             item.composite_rank = avg_rank
 
@@ -269,3 +266,81 @@ class Intraday5mMultiHorizonStrategy:
             available_slots -= 1
 
         return signals
+
+
+class HourlyIntradayMultiHorizonStrategy(Intraday5mMultiHorizonStrategy):
+    """Adaptación de S6 para velas horarias (1h)."""
+
+    id: str = "s6_hourly_multi_horizon"
+    version: str = "1.0.0"
+
+    data_requirements: StrategyDataRequirements = StrategyDataRequirements(
+        needs_daily_bars=False,
+        needs_intraday_bars=True,
+        intraday_timeframe="1h",
+        intraday_lookback_bars=40,
+        requires_sip_delayed=True,
+    )
+
+    def __init__(
+        self,
+        top_n: int = 3,
+        trailing_ema_period: int = 3,
+        trend_ema_period: int = 7,
+        initial_stop_pct: float = 0.015,
+        max_holding_bars: int = 5,
+        start_entry_time: time = time(9, 30),
+        end_entry_time: time = time(14, 30),
+        flatten_time: time = time(15, 30),
+    ) -> None:
+        super().__init__(
+            top_n=top_n,
+            trailing_ema_period=trailing_ema_period,
+            trend_ema_period=trend_ema_period,
+            initial_stop_pct=initial_stop_pct,
+            max_holding_bars=max_holding_bars,
+            start_entry_time=start_entry_time,
+            end_entry_time=end_entry_time,
+            flatten_time=flatten_time,
+        )
+
+    @staticmethod
+    def calculate_metrics_for_ticker(
+        bars_df: pd.DataFrame,
+        symbol: str,
+        trend_ema_period: int = 7,
+        trailing_ema_period: int = 3,
+    ) -> IntradayMomentumMetrics | None:
+        """Calcula momentum horario en 1h, 2h, 3h, 4h y 7h (1 sesión)."""
+        if len(bars_df) < 8:
+            return None
+
+        closes = bars_df["close"].astype(float).values
+        c_now = float(closes[-1])
+        if c_now <= 0:
+            return None
+
+        m1 = (c_now - float(closes[-2])) / float(closes[-2]) if len(closes) >= 2 else 0.0
+        m2 = (c_now - float(closes[-3])) / float(closes[-3]) if len(closes) >= 3 else m1
+        m3 = (c_now - float(closes[-4])) / float(closes[-4]) if len(closes) >= 4 else m2
+        m4 = (c_now - float(closes[-5])) / float(closes[-5]) if len(closes) >= 5 else m3
+        m7 = (c_now - float(closes[-8])) / float(closes[-8]) if len(closes) >= 8 else m4
+
+        closes_s = pd.Series(closes)
+        e_trend = float(ema(closes_s, trend_ema_period).iloc[-1])
+        e_trail = float(ema(closes_s, trailing_ema_period).iloc[-1])
+
+        passes = (c_now > e_trend) and (m7 > 0.0) and (m1 > 0.0)
+
+        return IntradayMomentumMetrics(
+            symbol=symbol,
+            m10=m1,
+            m15=m2,
+            m30=m3,
+            m45=m4,
+            m60=m7,
+            ema21=e_trend,
+            ema9=e_trail,
+            current_price=c_now,
+            passes_gate=passes,
+        )
