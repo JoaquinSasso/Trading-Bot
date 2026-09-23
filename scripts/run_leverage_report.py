@@ -66,12 +66,19 @@ def compute_spy_buy_hold(spy_df: pd.DataFrame, start_date: date, end_date: date,
     eq.index = pd.to_datetime(df["_date"])
     return eq
 
-def run_strategy_backtest(strategy, daily_data, universe, start, end, rf_series):
+def run_strategy_backtest(strategy, daily_data, universe, start, end, rf_series, leverage=1.0):
+    """Backtest con apalancamiento real del motor (cuenta margin de Alpaca, Reg T 2x overnight).
+
+    El motor modela: préstamo sobre el saldo deudor con intereses (6.5% anual, base 360), margen
+    inicial 50%, mantenimiento por tramos, margin calls con liquidación en la apertura siguiente
+    y poder de compra 1x cuando el equity es menor a $2.000.
+    """
     cfg_kwargs = dict(
         strategy=strategy,
         universe=universe,
         initial_capital=INITIAL_CAPITAL,
-        account_type="cash",
+        account_type="margin",
+        leverage=leverage,
         settlement_days=1,
         max_open_positions=4,
         single_position_cap=0.25,
@@ -92,7 +99,7 @@ def run_strategy_backtest(strategy, daily_data, universe, start, end, rf_series)
 def plot_equity_comparison_leverage(results_dict, spy_eq, strat_name, save_path):
     fig, ax = plt.subplots(figsize=(12, 6))
     capital = float(INITIAL_CAPITAL)
-    colors = {"x1": "#2196F3", "x2": "#4CAF50", "x3": "#FF9800", "x5": "#E91E63"}
+    colors = {"x1.0": "#2196F3", "x1.5": "#4CAF50", "x2.0": "#FF9800"}
 
     for lev_key, eq_curve in results_dict.items():
         if not eq_curve.empty:
@@ -130,58 +137,74 @@ def main():
     spy_14 = daily_data_14.get("SPY")
     spy_eq = compute_spy_buy_hold(spy_14, DAILY_START, DAILY_END, float(INITIAL_CAPITAL))
 
+    # Se crea una instancia nueva por corrida (las estrategias guardan estado interno).
     strategies = [
-        ("S5 - Dual Momentum Leader", "s5_leverage", DualMomentumLeaderStrategy()),
-        ("S9 - Turn of Month Momentum", "s9_leverage", TurnOfMonthMomentumStrategy()),
-        ("S11 - Volatility Squeeze", "s11_leverage", VolatilitySqueezeStrategy())
+        ("S5 - Dual Momentum Leader", "s5_leverage", DualMomentumLeaderStrategy),
+        ("S9 - Turn of Month Momentum", "s9_leverage", TurnOfMonthMomentumStrategy),
+        ("S11 - Volatility Squeeze", "s11_leverage", VolatilitySqueezeStrategy),
     ]
 
-    leverages = [1, 2, 3, 5]
-    
+    # Reg T limita el apalancamiento overnight a 2x: x3 y x5 no son posibles en una cuenta de Alpaca.
+    leverages = [1.0, 1.5, 2.0]
+
     md_lines = []
-    md_lines.append("# 📈 Informe de Estrategias y Apalancamiento (x1, x2, x3, x5)")
+    md_lines.append("# 📈 Informe de Estrategias y Apalancamiento (x1, x1.5, x2)")
     md_lines.append(f"**Periodo:** {DAILY_START} a {DAILY_END}")
     md_lines.append("**Universo:** 14 Activos Principales (Tech, Finanzas, Salud, Energía, Metales)")
-    md_lines.append("**Capital Inicial:** $2,000.00 USD\n")
-    
+    md_lines.append(f"**Capital Inicial:** ${float(INITIAL_CAPITAL):,.2f} USD\n")
+
     md_lines.append("> [!NOTE]")
-    md_lines.append("> La simulación de apalancamiento multiplica linealmente el retorno diario de la estrategia (sin descontar costos de margen/préstamo). Los resultados reales serían ligeramente menores debido a estos costos.\n")
-    
+    md_lines.append(
+        "> Apalancamiento simulado por el motor (cuenta margin de Alpaca): préstamo con intereses "
+        "(6.5% anual, base 360), margen inicial 50% (máximo 2x overnight), mantenimiento 30%, "
+        "margin calls y poder de compra 1x con equity menor a $2.000. x3 y x5 no son posibles bajo Reg T.\n"
+    )
+
     spy_ret = (spy_eq.iloc[-1] / float(INITIAL_CAPITAL)) - 1
     md_lines.append(f"> **S&P 500 (SPY)** Retorno en el periodo: **{spy_ret*100:.2f}%**\n")
 
-    for name, short_name, strat in strategies:
+    for name, short_name, strat_cls in strategies:
         print(f"Ejecutando {name}...")
         try:
-            res = run_strategy_backtest(strat, daily_data_14, UNIVERSE_14, DAILY_START, DAILY_END, rf_series)
-            
-            eq_curve = res.equity_curve
-            if eq_curve.empty:
-                print(f"  {name} falló o no generó equity curve.")
-                continue
-                
-            pct_ret = eq_curve.pct_change().fillna(0.0)
-            
             results_dict = {}
             md_lines.append(f"## {name}")
-            md_lines.append("| Apalancamiento | Retorno Total | Capital Final |")
-            md_lines.append("|---|---|---|")
-            
-            for L in leverages:
-                lev_pct = pct_ret * L
-                lev_eq = float(INITIAL_CAPITAL) * (1 + lev_pct).cumprod()
-                results_dict[f"x{L}"] = lev_eq
-                
-                final_cap = lev_eq.iloc[-1]
-                total_ret = (final_cap / float(INITIAL_CAPITAL)) - 1
-                
-                md_lines.append(f"| **x{L}** | {total_ret*100:.2f}% | ${final_cap:,.2f} |")
-                
+            md_lines.append(
+                "| Apalancamiento | Retorno Total | CAGR | Sharpe | Max DD | Exposición media | "
+                "Intereses | Margin calls | Capital Final |"
+            )
+            md_lines.append("|---|---|---|---|---|---|---|---|---|")
+            warnings_seen: list[str] = []
+
+            for lev in leverages:
+                res = run_strategy_backtest(
+                    strat_cls(), daily_data_14, UNIVERSE_14, DAILY_START, DAILY_END, rf_series, leverage=lev
+                )
+                eq_curve = res.equity_curve
+                if eq_curve.empty:
+                    print(f"  {name} x{lev} no generó equity curve.")
+                    continue
+                m = res.metrics
+                results_dict[f"x{lev:.1f}"] = eq_curve
+                calls = sum(1 for e in res.margin_events if e.event_type == "MARGIN_CALL")
+                gl = res.gross_leverage.replace([float("inf")], float("nan")).dropna()
+                cagr = f"{m.cagr_pct:.2f}%" if m.cagr_pct is not None else "N/A"
+                sharpe = f"{m.sharpe_ratio:.2f}" if m.sharpe_ratio is not None else "N/A"
+                md_lines.append(
+                    f"| **x{lev:.1f}** | {m.total_return_pct:.2f}% | {cagr} | {sharpe} | "
+                    f"{m.max_drawdown_pct:.2f}% | {gl.mean() if len(gl) else 0:.2f}x | "
+                    f"${res.margin_interest_paid:,.2f} | {calls} | ${m.final_capital:,.2f} |"
+                )
+                warnings_seen += [w for w in res.warnings if w not in warnings_seen]
+
+            if warnings_seen:
+                md_lines.append("\n**Advertencias del motor:**")
+                md_lines += [f"- {w}" for w in warnings_seen]
+
             chart_path = CHARTS_DIR / f"{short_name}.png"
             plot_equity_comparison_leverage(results_dict, spy_eq, name, chart_path)
-            
+
             md_lines.append(f"\n![Gráfico {name}](charts/{short_name}.png)\n")
-            
+
         except Exception as e:
             print(f"  Error en {name}: {e}")
 

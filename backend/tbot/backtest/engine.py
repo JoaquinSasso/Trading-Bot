@@ -122,6 +122,28 @@ class BacktestConfig:
     single_position_cap: float = 0.25
     risk_per_trade_pct: float = 0.5
 
+    # Apalancamiento (requiere account_type="margin"; valores por defecto de Alpaca)
+    # `leverage`: exposición bruta objetivo / equity. Multiplica target_weight, single_position_cap
+    # y los topes de bloque. Límite Reg T overnight: 1 / initial_margin_pct (2x).
+    leverage: float = 1.0
+    max_gross_leverage: float | None = None  # tope duro del broker; None = `leverage`
+    initial_margin_pct: float = 0.50  # Reg T
+    maintenance_margin_pct: float = 0.30  # Alpaca, acciones > $6 (tramos de precio en el broker)
+    min_margin_equity: float = 2000.0  # Alpaca: con menos equity el poder de compra es 1x
+    # Interés sobre saldo deudor: "fixed" (tasa anual fija) o "benchmark_spread"
+    # (tasa del efectivo anualizada x252 + spread; sigue el ciclo de tasas).
+    margin_rate_mode: Literal["fixed", "benchmark_spread"] = "fixed"
+    margin_annual_rate: float = 0.065  # Alpaca no-Elite (sep-2026)
+    margin_rate_spread: float = 0.025
+    margin_day_count: int = 360  # Alpaca: (debit * tasa) / 360, fines de semana incluidos
+    # Tras un margin call (se emite al cierre y se liquida en la apertura siguiente), se venden
+    # posiciones (las más grandes primero) hasta que equity / exposición >= este ratio.
+    margin_call_restore_ratio: float = 0.50
+    # El objetivo de volatilidad del control B-03 se multiplica por `leverage` (si no, el control
+    # de volatilidad anularía el apalancamiento).
+    vol_target_scales_with_leverage: bool = True
+    leveraged_etf_multipliers: dict[str, int] | None = None  # p.ej. {"QLD": 2, "TQQQ": 3}
+
     # Cortacircuitos
     enable_circuit_breakers: bool = True
     daily_loss_limit_pct: float = 2.0
@@ -217,6 +239,11 @@ class BacktestResult:
     portfolio_daily_volatility: pd.Series = field(default_factory=pd.Series)
     warnings: list[str] = field(default_factory=list)
     gfv_count: int = 0
+    # Margen / apalancamiento
+    margin_events: list[CircuitBreakerEvent] = field(default_factory=list)
+    margin_interest_paid: float = 0.0
+    gross_leverage: pd.Series = field(default_factory=pd.Series)  # exposición bruta / equity al cierre
+    day_trades: int = 0
 
     def __iter__(self):
         return iter((self.metrics, self.trades, self.equity_curve))
@@ -579,6 +606,32 @@ class BacktestEngine:
         self._legacy = self.config.engine_mode == "legacy"
         self._warnings: list[str] = []
 
+        # Apalancamiento: validación contra Reg T y tipo de cuenta
+        lev = float(self.config.leverage)
+        max_gross = float(self.config.max_gross_leverage) if self.config.max_gross_leverage is not None else lev
+        if lev <= 0 or max_gross <= 0:
+            raise ValueError("leverage y max_gross_leverage deben ser > 0")
+        if max(lev, max_gross) > 1.0 + 1e-9:
+            if self._legacy:
+                raise ValueError("engine_mode='legacy' no soporta apalancamiento")
+            if self.config.account_type.lower() != "margin":
+                raise ValueError(
+                    "El apalancamiento requiere account_type='margin' (una cuenta cash no puede tomar préstamo)."
+                )
+            reg_t = 1.0 / float(self.config.initial_margin_pct)
+            if max(lev, max_gross) > reg_t + 1e-9:
+                raise ValueError(
+                    f"Apalancamiento {max(lev, max_gross):.2f}x supera el máximo overnight de Reg T "
+                    f"({reg_t:.2f}x con margen inicial {self.config.initial_margin_pct:.0%})."
+                )
+        self._lev = Decimal(str(lev)) if not self._legacy else Decimal("1")
+        self._max_gross = max(max_gross, lev)
+        self._margin_on = (not self._legacy) and self.config.account_type.lower() == "margin"
+        self._margin_call_pending = False
+        self._margin_events: list[CircuitBreakerEvent] = []
+        self._prev_session_day: date | None = None
+        self._gross_lev: dict[date, float] = {}
+
         self.daily_data = (
             {k.strip().upper(): v.copy() for k, v in historical_daily.items()} if historical_daily else {}
         )
@@ -659,6 +712,11 @@ class BacktestEngine:
             etf_symbols=LEGACY_ETF_SYMBOLS if self._legacy else self.config.etf_symbols,
             cash_account_model="settled_only" if self._legacy else self.config.cash_account_model,
             legacy=self._legacy,
+            initial_margin_pct=Decimal(str(self.config.initial_margin_pct)),
+            maintenance_margin_pct=Decimal(str(self.config.maintenance_margin_pct)),
+            min_margin_equity=Decimal(str(self.config.min_margin_equity)),
+            max_gross_leverage=Decimal("1") if self._legacy else Decimal(str(self._max_gross)),
+            leveraged_etf_multipliers=self.config.leveraged_etf_multipliers,
         )
 
         # 5. Gestor de cortacircuitos (Circuit Breakers)
@@ -1038,7 +1096,11 @@ class BacktestEngine:
             if prev_date is None or cur_date != prev_date:
                 if prev_date is not None:
                     daily_equity_records[prev_date] = float(self.broker.get_equity(current_prices))
+                    if self._margin_on:
+                        self._eod_margin_check(prev_date, ts, current_prices)
                 self.broker.process_settlement(cur_date)
+                if not L:
+                    self._charge_margin_interest(cur_date)
 
                 # Rendimiento de efectivo remanente (Cash Yield / BIL)
                 self._apply_cash_yield(cur_date)
@@ -1046,6 +1108,9 @@ class BacktestEngine:
                 for sym in self.intraday_data:
                     if ts in bar_lookup[sym]:
                         current_prices[sym] = Decimal(str(round(float(bar_lookup[sym][ts]["open"]), 4)))
+                if not L and self._margin_call_pending:
+                    self._liquidate_for_margin(cur_date, ts, current_prices, day_counter, "margin_call_liquidation")
+                    self._margin_call_pending = False
                 opening_equity = self.broker.get_equity(current_prices)
                 if self.cb_manager:
                     self.cb_manager.reset_daily(opening_equity, cur_date)
@@ -1265,12 +1330,14 @@ class BacktestEngine:
                         continue
 
                     equity = self.broker.get_equity(current_prices)
+                    self.broker.marks = current_prices
+                    lev_f = float(self._lev)
                     alloc = min(
                         float(self.broker.buying_power),
-                        float(equity) * self.config.single_position_cap,
+                        float(equity) * self.config.single_position_cap * lev_f,
                     )
                     if not L and sig.target_weight is not None:
-                        alloc = min(alloc, float(equity) * max(0.0, float(sig.target_weight)))
+                        alloc = min(alloc, float(equity) * max(0.0, float(sig.target_weight)) * lev_f)
                     if alloc < self.config.min_position_usd:
                         continue
 
@@ -1355,10 +1422,13 @@ class BacktestEngine:
         rets = pd.DataFrame(cols).dropna()
         if len(rets) < 20:
             return None
+        target_vol = self.config.target_portfolio_vol
+        if not self._legacy and self.config.vol_target_scales_with_leverage:
+            target_vol *= float(self._lev)
         sigma_p, k_s, _ = compute_portfolio_volatility_and_scale(
             weights=weights,
             returns_matrix=rets,
-            target_vol=self.config.target_portfolio_vol,
+            target_vol=target_vol,
             shrinkage_lambda=self.config.vol_shrinkage_lambda,
         )
         return sigma_p, k_s
@@ -1563,9 +1633,11 @@ class BacktestEngine:
             eval_dt = datetime.combine(current_day, eval_time)
             open_dt = datetime.combine(current_day, time(9, 30))
 
-            # A. Liquidación T+1 al inicio de sesión (+ rendimiento del efectivo de la noche previa)
+            # A. Liquidación T+1 al inicio de sesión (+ rendimiento del efectivo de la noche previa
+            #    e intereses del saldo deudor por los días calendario transcurridos)
             broker.process_settlement(current_day)
             if not L:
+                self._charge_margin_interest(current_day)
                 self._apply_cash_yield(current_day)
 
             # B. Precios de cierre (para valuación/decisión) y de apertura de la sesión
@@ -1587,7 +1659,13 @@ class BacktestEngine:
                 elif k >= 0:
                     opening_prices[sym] = ix.close_dec(k)
 
+            # B.1 Margin call del cierre anterior: liquidación forzada en la apertura
+            if not L and self._margin_call_pending:
+                self._liquidate_for_margin(current_day, open_dt, opening_prices, di, "margin_call_liquidation")
+                self._margin_call_pending = False
+
             # B.2 Órdenes pendientes ejecutadas en la apertura (next_open / limit del día previo)
+            broker.marks = opening_prices
             if not L and (pending_exits or pending_buys):
                 for sym, reason in pending_exits:
                     if sym in broker.positions and sym in opening_prices:
@@ -1635,6 +1713,11 @@ class BacktestEngine:
                     halt_session = self._cb_daily_check(
                         current_day, di, eval_dt, opening_equity, current_prices, opening_prices, today_row, cb_events
                     )
+
+            # D.2 Guarda de equity negativo (el broker liquida sin aviso si el equity se acerca a 0)
+            if self._margin_on and broker.positions:
+                self._negative_equity_guard(current_day, di, eval_dt, opening_prices, today_row)
+            broker.marks = current_prices
 
             # E. Overlay genérico de salidas (EMA trailing / sesiones máximas)
             if not halt_session and overlay_on:
@@ -1751,6 +1834,8 @@ class BacktestEngine:
             # H. Registro EOD
             day_equity = float(broker.get_equity(current_prices))
             equity_records[current_day] = day_equity
+            if self._margin_on:
+                self._eod_margin_check(current_day, eval_dt, current_prices)
             if self.cb_manager:
                 self.cb_manager.update_equity(Decimal(str(day_equity)))
 
@@ -1840,9 +1925,10 @@ class BacktestEngine:
         if ref_price <= _D0:
             return
 
-        max_alloc = equity * Decimal(str(cfg.single_position_cap))
+        lev = self._lev
+        max_alloc = equity * Decimal(str(cfg.single_position_cap)) * lev
         if not L and sig.target_weight is not None:
-            raw_alloc = min(equity * Decimal(str(max(0.0, float(sig.target_weight)))), max_alloc)
+            raw_alloc = min(equity * Decimal(str(max(0.0, float(sig.target_weight)))) * lev, max_alloc)
         else:
             risk_usd = Decimal(str(self.risk_per_trade_pct / 100.0)) * equity
             risk_per_unit = (sig.entry_price_ref if L else ref_price) - sig.stop_price
@@ -1984,6 +2070,139 @@ class BacktestEngine:
                            self.config.daily_loss_limit_pct, [])
         return False
 
+
+    # ─────────────────────────────────────────────────────────────── margen / apalancamiento
+    def _margin_rate(self, day: date) -> float:
+        cfg = self.config
+        if cfg.margin_rate_mode == "benchmark_spread":
+            return max(0.0, self._rf_map.get(day, 0.0) * 252.0) + cfg.margin_rate_spread
+        return cfg.margin_annual_rate
+
+    def _charge_margin_interest(self, day: date) -> None:
+        """Intereses del saldo deudor por los días calendario desde la sesión previa (base 360)."""
+        if not self._margin_on:
+            return
+        prev = self._prev_session_day
+        self._prev_session_day = day
+        if prev is None:
+            return
+        self.broker.accrue_margin_interest(
+            (day - prev).days, self._margin_rate(prev), self.config.margin_day_count
+        )
+
+    def _eod_margin_check(self, day: date, ts: datetime, prices: dict[str, Decimal]) -> None:
+        """Registra la exposición bruta y emite un margin call si no se cubre el mantenimiento."""
+        broker = self.broker
+        gross = broker.gross_exposure(prices)
+        eq = broker.get_equity(prices)
+        self._gross_lev[day] = float(gross / eq) if eq > 0 else float("inf")
+        if not broker.positions:
+            return
+        req = broker.maintenance_requirement(prices)
+        if eq < req:
+            self._margin_call_pending = True
+            self._cb_event(self._margin_events, day, ts, "MARGIN_CALL", eq, eq,
+                           float(req / gross * 100) if gross > 0 else 0.0, [])
+
+    def _liquidate_for_margin(
+        self, day: date, ts: datetime, prices: dict[str, Decimal], di: int, reason: str
+    ) -> None:
+        """Vende posiciones completas (la más grande primero) hasta cubrir el mantenimiento y el
+        ratio `margin_call_restore_ratio` de equity / exposición bruta."""
+        broker = self.broker
+        target = Decimal(str(self.config.margin_call_restore_ratio))
+        eq0 = broker.get_equity(prices)
+        liquidated: list[str] = []
+        while broker.positions:
+            gross = broker.gross_exposure(prices)
+            eq = broker.get_equity(prices)
+            if gross <= 0 or (eq / gross >= target and eq >= broker.maintenance_requirement(prices)):
+                break
+            sym = max(
+                broker.positions,
+                key=lambda s: broker.positions[s].qty * prices.get(s, broker.positions[s].entry_price),
+            )
+            px = prices.get(sym, broker.positions[sym].entry_price)
+            tr = broker.close_position(sym, px, ts, reason=reason)
+            self._record_trade(tr, di)
+            liquidated.append(sym)
+        if liquidated:
+            self._cb_event(self._margin_events, day, ts, "MARGIN_LIQUIDATION", eq0,
+                           broker.get_equity(prices), float(target * 100), liquidated)
+
+    def _negative_equity_guard(
+        self,
+        day: date,
+        di: int,
+        ts: datetime,
+        opening_prices: dict[str, Decimal],
+        today_row: dict[str, int],
+    ) -> None:
+        """Si en el peor caso intradía (todas las posiciones en su mínimo) el equity llega a 0, el
+        broker liquida todo en el punto donde el equity se anula (interpolado apertura -> mínimos)."""
+        broker = self.broker
+        worst = broker.cash
+        lows: dict[str, Decimal] = {}
+        for s, p in broker.positions.items():
+            r = today_row.get(s, -1)
+            lows[s] = _dec4(self._index(s).low[r]) if r >= 0 else opening_prices.get(s, p.entry_price)
+            worst += p.qty * lows[s]
+        if worst > 0:
+            return
+        eq_open = broker.cash + sum(
+            (p.qty * opening_prices.get(s, p.entry_price) for s, p in broker.positions.items()), Decimal("0")
+        )
+        f = Decimal("0") if eq_open <= 0 else min(Decimal("1"), eq_open / (eq_open - worst))
+        liquidated: list[str] = []
+        for s in list(broker.positions.keys()):
+            p = broker.positions[s]
+            o = opening_prices.get(s, p.entry_price)
+            px = (o - f * (o - lows[s])) if lows[s] < o else o
+            tr = broker.close_position(s, px.quantize(Decimal("0.0001")), ts, reason="negative_equity_liquidation")
+            self._record_trade(tr, di)
+            liquidated.append(s)
+        self._cb_event(self._margin_events, day, ts, "NEGATIVE_EQUITY_LIQUIDATION", eq_open,
+                       broker.cash, 0.0, liquidated)
+
+    def _margin_warnings(self, equity_records: dict[date, float]) -> None:
+        cfg = self.config
+        if not self._margin_on:
+            return
+        lev = float(self._lev)
+        if lev > 1.0:
+            gl = pd.Series(self._gross_lev, dtype=float).replace([np.inf], np.nan).dropna()
+            calls = sum(1 for e in self._margin_events if e.event_type == "MARGIN_CALL")
+            self._warn(
+                f"Apalancamiento objetivo {lev:.2f}x: exposición bruta media {gl.mean() if len(gl) else 0:.2f}x "
+                f"(máx {gl.max() if len(gl) else 0:.2f}x), intereses de margen ${float(self.broker.margin_interest_paid):,.2f}, "
+                f"{calls} margin calls."
+            )
+            if cfg.enable_vol_control and not cfg.vol_target_scales_with_leverage:
+                self._warn(
+                    "El control de volatilidad usa el objetivo sin escalar: puede anular el apalancamiento."
+                )
+            if equity_records and min(equity_records.values()) < cfg.min_margin_equity:
+                self._warn(
+                    f"El equity cayó por debajo de ${cfg.min_margin_equity:,.0f}: en esos días el poder de "
+                    f"compra fue 1x (regla de Alpaca)."
+                )
+        # Regla PDT (vigente hasta el 2026-06-04): > 3 day trades en 5 sesiones con equity < $25.000
+        dts = sorted(d for d in self.broker.day_trade_dates if d < date(2026, 6, 4))
+        if dts and equity_records:
+            days = sorted(equity_records)
+            pos = {d: i for i, d in enumerate(days)}
+            idxs = [pos[d] for d in dts if d in pos]
+            breaches = 0
+            for j in range(len(idxs)):
+                window = [i for i in idxs if idxs[j] - 4 <= i <= idxs[j]]
+                if len(window) > 3 and equity_records[days[idxs[j]]] < 25000:
+                    breaches += 1
+            if breaches:
+                self._warn(
+                    f"{breaches} ocasiones con más de 3 day trades en 5 sesiones y equity < $25.000 "
+                    f"(regla PDT vigente hasta jun-2026: el broker habría bloqueado la cuenta)."
+                )
+
     def _finalize(
         self,
         equity_records: dict[date, float],
@@ -2013,6 +2232,7 @@ class BacktestEngine:
                 self._warn(f"{self._rf_missing_days} sesiones sin dato de BIL: el efectivo no rindió esos días.")
             if self.broker.gfv_count:
                 self._warn(f"{self.broker.gfv_count} Good Faith Violations (ventas antes de liquidar los fondos).")
+            self._margin_warnings(equity_records)
             metrics = compute_backtest_metrics(
                 strategy_id=strat_id,
                 trades=self.broker.closed_trades,
@@ -2036,6 +2256,10 @@ class BacktestEngine:
             portfolio_daily_volatility=pd.Series(portfolio_vols, dtype=float),
             warnings=list(self._warnings),
             gfv_count=self.broker.gfv_count,
+            margin_events=list(self._margin_events),
+            margin_interest_paid=float(self.broker.margin_interest_paid),
+            gross_leverage=pd.Series(self._gross_lev, dtype=float),
+            day_trades=len(self.broker.day_trade_dates),
         )
 
     # ─────────────────────────────────────────────────────────────── modo bloques
@@ -2168,7 +2392,7 @@ class BacktestEngine:
             norm_weights = {s: inv_vols[s] / sum_inv for s in entry_candidates}
 
             curr_block_val = sum(float(broker.positions[s].qty * current_prices[s]) for s in block_open)
-            max_block_capital = total_equity * effective_block_cap
+            max_block_capital = total_equity * effective_block_cap * float(self._lev)
             available_block_capital = max(0.0, max_block_capital - curr_block_val)
 
             vol_scale = 1.0
@@ -2192,7 +2416,7 @@ class BacktestEngine:
                 per_inst_cap = b_cfg.per_instrument_cap.get(
                     s, b_cfg.per_instrument_cap.get("default", cfg.single_position_cap)
                 )
-                max_inst_alloc = total_equity * min(per_inst_cap, cfg.single_position_cap)
+                max_inst_alloc = total_equity * min(per_inst_cap, cfg.single_position_cap) * float(self._lev)
                 alloc = min(raw_alloc, max_inst_alloc, float(broker.buying_power))
                 if alloc < cfg.min_position_usd:
                     continue

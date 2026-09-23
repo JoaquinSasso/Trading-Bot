@@ -63,10 +63,29 @@ Este documento resume los cambios que surgieron de la auditoría del motor (sep-
 
 - **Sesgo de supervivencia del universo.** `UNIVERSE_14` y el universo de 93 acciones se eligieron con información de hoy. Hacen falta constituyentes point-in-time para evaluarlos sin ese sesgo. Universo A (ETFs) no tiene este problema.
 - **Solapamiento de holdouts.** La ventana de desarrollo horaria (2023-10 → 2025-09) está dentro del holdout diario (2023-01 → 2026-02). Es una decisión de gobernanza, no del motor.
-- **Informe de apalancamiento.** `run_leverage_report.py` multiplica retornos diarios: no descuenta el margen y también multiplica el rendimiento del efectivo.
 
 ## Reproducir resultados de v2.2
 
 ```python
 BacktestConfig(..., engine_mode="legacy")
 ```
+
+## Apalancamiento (cuenta margin, reglas de Alpaca)
+
+```python
+BacktestConfig(..., account_type="margin", leverage=1.5)   # exposición bruta objetivo 1.5x
+```
+
+- **`leverage` como multiplicador.** Multiplica `target_weight`, `single_position_cap` y los topes de bloque. Con dimensionamiento por riesgo solo sube el tope por posición.
+- **Validaciones.** Exige `account_type="margin"`. El límite es el de Reg T overnight: `1 / initial_margin_pct`, que da 2x. `max_gross_leverage` agrega un tope duro distinto del objetivo.
+- **Poder de compra.** Es el mínimo entre `equity / 50% − exposición` y `leverage × equity − exposición`. Si el equity es menor a $2.000, queda en 1x, como en Alpaca.
+- **Intereses.** Se cobran sobre el saldo deudor por días calendario, con base 360; el fin de semana cuenta 3 días. Hay dos modos: `margin_rate_mode="fixed"` (6,5% anual, tasa de Alpaca no-Elite en sep-2026) o `"benchmark_spread"` (tasa del efectivo × 252 + `margin_rate_spread`, que sigue el ciclo de tasas). El interés se debita cada sesión, así que compone levemente más que el posteo mensual real.
+- **Mantenimiento.** Usa los tramos de Alpaca: 100% del valor para precios menores a $2,50, 50% entre $2,50 y $6, y 30% por encima de $6. Los ETFs apalancados van a 50% o 75% (`leveraged_etf_multipliers`).
+- **Margin call.** Se evalúa al cierre y la liquidación ocurre en la apertura siguiente, vendiendo posiciones completas de la más grande a la más chica. Se vende hasta que equity / exposición ≥ `margin_call_restore_ratio` (50%).
+- **Guarda de equity negativo.** Si en el peor caso intradía el equity llega a 0, se liquida todo donde se anula.
+- **Control de volatilidad.** El objetivo se multiplica por `leverage` (`vol_target_scales_with_leverage`), porque si no, el control anularía el apalancamiento.
+- **Cortacircuitos.** Siguen midiéndose sobre el equity. Con apalancamiento se disparan mucho más seguido: en S5 con el universo 14 pasa de 5 flatten con 1x a 95 con 2x.
+- **Regla PDT.** Se cuentan los day trades (vigente hasta el 2026-06-04) y se avisa si hubo más de 3 en 5 sesiones con equity menor a $25.000.
+- **Resultados.** `result.margin_events` (MARGIN_CALL, MARGIN_LIQUIDATION, NEGATIVE_EQUITY_LIQUIDATION), `result.margin_interest_paid`, `result.gross_leverage` (exposición bruta / equity al cierre) y `result.day_trades`.
+
+Con `leverage=1` en cuenta margin, los resultados son idénticos a los de la cuenta cash (verificado con S5).

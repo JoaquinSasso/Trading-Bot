@@ -357,3 +357,92 @@ def test_lazy_bars_row_index_and_mapping_protocol():
     lazy = _LazyDailyBars(ix, {"AAA": 2, "BBB": 0}, dates[1], mask_today=False)
     assert "AAA" in lazy and "BBB" not in lazy and list(lazy) == ["AAA"]
     assert len(lazy["AAA"]) == 2 and lazy.row_index("AAA") == 1 and lazy.get("ZZZ") is None
+
+
+# ─────────────────────────────────────────────────────────────── apalancamiento (margin)
+def _lev_cfg(strategy, **kw) -> BacktestConfig:
+    base = dict(account_type="margin", leverage=2.0, single_position_cap=1.0, margin_annual_rate=0.065)
+    base.update(kw)
+    return _cfg(strategy, **base)
+
+
+def test_leverage_requires_margin_account_and_respects_reg_t():
+    with pytest.raises(ValueError, match="margin"):
+        BacktestEngine(config=_cfg(None, leverage=1.5), historical_daily={})
+    with pytest.raises(ValueError, match="Reg T"):
+        BacktestEngine(config=_cfg(None, account_type="margin", leverage=2.5), historical_daily={})
+
+
+def test_margin_buying_power_reg_t_cap_and_minimum_equity():
+    b = _nocost_broker(initial_capital=Decimal("10000"), account_type="margin", max_gross_leverage=Decimal("2"))
+    assert b.buying_power == Decimal("20000")
+    b.max_gross_leverage = Decimal("1.5")
+    assert b.buying_power == Decimal("15000.0")
+    small = _nocost_broker(initial_capital=Decimal("1500"), account_type="margin", max_gross_leverage=Decimal("2"))
+    assert small.buying_power == Decimal("1500")  # Alpaca: < $2.000 de equity -> 1x
+
+
+def test_leveraged_position_size_and_weekend_interest():
+    dates = _bdays(date(2021, 1, 4), 10)  # lunes 4 -> viernes 15
+    data = {"AAA": _df("AAA", dates, [100.0] * 10)}
+    strat = _BuyOnce("AAA", weight=1.0)
+    with holdout_bypass_context():
+        res = BacktestEngine(config=_lev_cfg(strat), historical_daily=data).run(dates[0], dates[-1])
+    assert res.trades[0].qty == Decimal("200.0000")  # 2x de 10.000 a $100
+    # Deuda de 10.000 desde el cierre del 4/1 hasta el 15/1: 11 días calendario (incluye fin de
+    # semana). El interés se debita cada sesión, así que la deuda crece con lo ya cobrado.
+    debit, expected = 10000.0, 0.0
+    for prev, cur in zip(dates[:-1], dates[1:], strict=True):
+        charge = debit * 0.065 * (cur - prev).days / 360
+        expected += charge
+        debit += charge
+    assert res.margin_interest_paid == pytest.approx(expected, rel=1e-9)
+    assert float(res.equity_curve.iloc[-1]) == pytest.approx(10000 - expected, abs=1e-6)
+    assert res.gross_leverage.iloc[0] == pytest.approx(2.0)
+
+
+def test_margin_call_liquidates_at_next_open():
+    dates = _bdays(date(2021, 1, 4), 5)
+    df = _df("AAA", dates, [100.0, 60.0, 60.0, 60.0, 60.0], spread=0.0)
+    df.loc[2, "open"] = 58.0
+    strat = _BuyOnce("AAA", stop_pct=0.9, weight=1.0)
+    with holdout_bypass_context():
+        res = BacktestEngine(config=_lev_cfg(strat, margin_annual_rate=0.0), historical_daily=data_dict(df)).run(
+            dates[0], dates[-1]
+        )
+    kinds = [e.event_type for e in res.margin_events]
+    # Día 1: equity 2.000 sobre 12.000 de exposición < 30% de mantenimiento -> margin call
+    assert kinds[:2] == ["MARGIN_CALL", "MARGIN_LIQUIDATION"]
+    liq = [t for t in res.trades if t.exit_reason == "margin_call_liquidation"][0]
+    assert liq.exit_time.date() == dates[2] and liq.exit_price == Decimal("58.0000")
+
+
+def data_dict(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    return {"AAA": df}
+
+
+def test_negative_equity_guard_liquidates_before_equity_goes_below_zero():
+    dates = _bdays(date(2021, 1, 4), 3)
+    df = _df("AAA", dates, [100.0, 100.0, 100.0], spread=0.0)
+    df.loc[1, ["open", "high", "low", "close"]] = [100.0, 100.0, 40.0, 45.0]
+    strat = _BuyOnce("AAA", stop_pct=0.9, weight=1.0)
+    with holdout_bypass_context():
+        res = BacktestEngine(config=_lev_cfg(strat, margin_annual_rate=0.0), historical_daily=data_dict(df)).run(
+            dates[0], dates[-1]
+        )
+    assert any(e.event_type == "NEGATIVE_EQUITY_LIQUIDATION" for e in res.margin_events)
+    liq = [t for t in res.trades if t.exit_reason == "negative_equity_liquidation"][0]
+    assert liq.exit_price == Decimal("50.0000")  # 200 acciones * 50 = deuda de 10.000 -> equity 0
+    assert float(res.equity_curve.iloc[-1]) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_vol_target_scales_with_leverage():
+    dates = _bdays(date(2020, 1, 2), 150)
+    a = _df("AAA", dates, _trend(150, 100.0, 0.0, seed=3))
+    with holdout_bypass_context():
+        eng = BacktestEngine(config=_lev_cfg(None, enable_vol_control=True, target_portfolio_vol=0.10),
+                             historical_daily={"AAA": a})
+        days_np = np.array([dates[-1]], dtype="datetime64[D]")
+        le = {"AAA": np.searchsorted(eng._index("AAA").dnp, days_np, "right") - 1}
+        sigma, k = eng._vol_control(0, le, {"AAA": 2.0})
+    assert k == pytest.approx(min(1.0, 0.20 / sigma))

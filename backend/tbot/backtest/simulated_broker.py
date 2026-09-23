@@ -8,6 +8,9 @@ Modela la ejecución de órdenes con las fricciones de un broker retail (Alpaca)
 - Liquidación T+N con calendario de sesiones (omite feriados si se provee el calendario).
 - Cuenta cash con modelo Reg T: se puede comprar con fondos no liquidados y se cuentan
   las Good Faith Violations (GFV) si se vende antes de que esos fondos liquiden.
+- Cuenta margin (Alpaca): margen inicial Reg T 50% (2x overnight), mantenimiento por tramos de
+  precio (100% < $2.50, 50% entre $2.50 y $6, 30% > $6), 1x si el equity es menor a $2.000,
+  intereses sobre el saldo deudor con base 360 y tope de apalancamiento bruto configurable.
 """
 
 from __future__ import annotations
@@ -116,6 +119,11 @@ class SimulatedBroker:
         trading_days: list[date] | None = None,
         cash_account_model: str = "settled_only",
         legacy: bool = False,
+        initial_margin_pct: Decimal = Decimal("0.50"),
+        maintenance_margin_pct: Decimal = Decimal("0.30"),
+        min_margin_equity: Decimal = Decimal("2000"),
+        max_gross_leverage: Decimal = Decimal("1"),
+        leveraged_etf_multipliers: dict[str, int] | None = None,
     ) -> None:
         self.initial_capital = initial_capital
         self.account_type = account_type.lower()
@@ -148,6 +156,18 @@ class SimulatedBroker:
         self.legacy = legacy
         self.gfv_count = 0
 
+        # Margen (solo account_type="margin")
+        self.initial_margin_pct = Decimal(str(initial_margin_pct))
+        self.maintenance_margin_pct = Decimal(str(maintenance_margin_pct))
+        self.min_margin_equity = Decimal(str(min_margin_equity))
+        # Tope de exposición bruta / equity. 1 = sin apalancamiento (compatible con v2.x).
+        self.max_gross_leverage = Decimal(str(max_gross_leverage))
+        self.leveraged_etf_multipliers = {k.upper(): v for k, v in (leveraged_etf_multipliers or {}).items()}
+        self.margin_interest_paid = Decimal("0")
+        self.day_trade_dates: list[date] = []
+        # Últimos precios conocidos (los fija el motor) para valuar la cartera en el poder de compra.
+        self.marks: dict[str, Decimal] = {}
+
         self.positions: dict[str, SimulatedPosition] = {}
         self.closed_trades: list[SimulatedTrade] = []
         self.trade_counter = 0
@@ -175,7 +195,68 @@ class SimulatedBroker:
         """
         if self.account_type == "cash" and self.cash_account_model == "settled_only":
             return max(Decimal("0.0"), self.settled_cash)
+        if self.account_type == "margin" and self.max_gross_leverage > 1:
+            return self.margin_buying_power()
         return max(Decimal("0.0"), self.cash)
+
+    # ------------------------------------------------------------------ margen
+    def gross_exposure(self, prices: dict[str, Decimal] | None = None) -> Decimal:
+        """Valor de mercado bruto de las posiciones (largas)."""
+        px = self.marks if prices is None else prices
+        total = Decimal("0")
+        for sym, pos in self.positions.items():
+            total += pos.qty * px.get(sym, pos.entry_price)
+        return total
+
+    def maintenance_rate(self, symbol: str, price: Decimal) -> Decimal:
+        """Requerimiento de mantenimiento de Alpaca para una posición larga."""
+        mult = self.leveraged_etf_multipliers.get(symbol.upper())
+        if mult is not None and mult >= 3:
+            return Decimal("0.75")
+        if mult is not None and mult >= 2:
+            return Decimal("0.50")
+        if price < Decimal("2.50"):
+            return Decimal("1.0")
+        if price < Decimal("6.00"):
+            return Decimal("0.50")
+        return self.maintenance_margin_pct
+
+    def maintenance_requirement(self, prices: dict[str, Decimal] | None = None) -> Decimal:
+        """Equity mínimo exigido por mantenimiento para las posiciones abiertas."""
+        px = self.marks if prices is None else prices
+        req = Decimal("0")
+        for sym, pos in self.positions.items():
+            p = px.get(sym, pos.entry_price)
+            req += pos.qty * p * self.maintenance_rate(sym, p)
+        return req
+
+    def margin_buying_power(self) -> Decimal:
+        """Poder de compra de la cuenta margin: mínimo entre Reg T y el tope de apalancamiento.
+
+        Reg T: (equity - margen inicial de lo abierto) / margen inicial. Con equity menor al mínimo
+        de la cuenta margin (Alpaca: $2.000) el poder de compra es 1x (solo efectivo).
+        """
+        gross = self.gross_exposure()
+        equity = self.cash + gross
+        if equity <= 0:
+            return Decimal("0.0")
+        if equity < self.min_margin_equity:
+            return max(Decimal("0.0"), self.cash)
+        reg_t = equity / self.initial_margin_pct - gross
+        cap = equity * self.max_gross_leverage - gross
+        return max(Decimal("0.0"), min(reg_t, cap))
+
+    def accrue_margin_interest(self, days: int, annual_rate: float, day_count: int = 360) -> Decimal:
+        """Cobra intereses sobre el saldo deudor: debit * tasa * días / base (Alpaca: base 360)."""
+        if self.account_type != "margin" or days <= 0 or annual_rate <= 0:
+            return Decimal("0")
+        debit = -self.cash
+        if debit <= 0:
+            return Decimal("0")
+        interest = debit * Decimal(str(annual_rate)) * Decimal(days) / Decimal(day_count)
+        self.settled_cash -= interest
+        self.margin_interest_paid += interest
+        return interest
 
     def set_trading_days(self, trading_days: list[date]) -> None:
         """Define el calendario de sesiones usado para calcular la fecha de liquidación."""
@@ -307,7 +388,10 @@ class SimulatedBroker:
             notional = qty * fill_price
 
         unsettled_until: date | None = None
-        if notional <= self.settled_cash:
+        if self.account_type == "margin":
+            # En margin el faltante se financia con préstamo del broker (saldo deudor).
+            self.settled_cash -= notional
+        elif notional <= self.settled_cash:
             self.settled_cash -= notional
         else:
             # Parte de la compra se financia con créditos no liquidados (gfv_aware o margin).
@@ -359,6 +443,8 @@ class SimulatedBroker:
         )
         if is_gfv:
             self.gfv_count += 1
+        if self.account_type == "margin" and _to_date(pos.entry_time) == _to_date(timestamp):
+            self.day_trade_dates.append(_to_date(timestamp))
 
         slippage_rate = self._get_slippage_rate(symbol)
         half_spread_rate = self._get_half_spread_rate(symbol)
